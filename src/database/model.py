@@ -46,6 +46,7 @@ class Setting(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     quality = Column(Enum("high", "medium", "low", "audio", "custom"), nullable=False, default="high")
     format = Column(Enum("video", "audio", "document"), nullable=False, default="video")
+    platform_quality = Column(Enum("highest", "balanced"), nullable=False, default="balanced")
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     user = relationship("User", back_populates="settings")
@@ -63,6 +64,17 @@ class Channel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="channels")
+
+
+class YouTubeFormatSession(Base):
+    __tablename__ = "youtube_format_sessions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False)
+    message_id = Column(Integer, nullable=False)
+    url = Column(String, nullable=False)
+    available_formats = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 def create_session():
@@ -283,3 +295,65 @@ def get_user_info(uid: int) -> dict:
                 'config': user.config
             }
         return None
+
+
+def get_platform_quality_setting(tgid: int) -> str:
+    """Get user's platform quality setting: 'highest' or 'balanced'"""
+    with session_manager() as session:
+        user = session.query(User).filter(User.user_id == tgid).first()
+        if user and user.settings:
+            return user.settings.platform_quality
+        return "balanced"
+
+
+def set_platform_quality_setting(tgid: int, quality: str):
+    """Set user's platform quality setting"""
+    with session_manager() as session:
+        user = session.query(User).filter(User.user_id == tgid).first()
+        if not user:
+            init_user(tgid)
+            user = session.query(User).filter(User.user_id == tgid).first()
+        
+        setting = session.query(Setting).filter(Setting.user_id == user.id).first()
+        if setting:
+            setting.platform_quality = quality
+        else:
+            session.add(Setting(user_id=user.id, platform_quality=quality))
+
+
+def store_youtube_session(user_id: int, message_id: int, url: str, formats: dict):
+    """Store YouTube format selection session"""
+    with session_manager() as session:
+        # Remove any existing session for this user
+        session.query(YouTubeFormatSession).filter(YouTubeFormatSession.user_id == user_id).delete()
+        
+        # Create new session
+        youtube_session = YouTubeFormatSession(
+            user_id=user_id,
+            message_id=message_id,
+            url=url,
+            available_formats=formats
+        )
+        session.add(youtube_session)
+
+
+def get_youtube_session(user_id: int) -> dict:
+    """Get YouTube format selection session"""
+    with session_manager() as session:
+        youtube_session = session.query(YouTubeFormatSession).filter(
+            YouTubeFormatSession.user_id == user_id
+        ).first()
+        
+        if youtube_session:
+            return {
+                'message_id': youtube_session.message_id,
+                'url': youtube_session.url,
+                'available_formats': youtube_session.available_formats
+            }
+        return None
+
+
+def clear_youtube_session(user_id: int):
+    """Clear YouTube format selection session"""
+    with session_manager() as session:
+        session.query(YouTubeFormatSession).filter(YouTubeFormatSession.user_id == user_id).delete()
