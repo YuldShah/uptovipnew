@@ -1,12 +1,6 @@
 #!/usr/local/bin/python3
 # coding: utf-8
 
-# ytdlbot - config.py
-# 8/28/21 15:01
-#
-
-__author__ = "Benny <benny.think@gmail.com>"
-
 import os
 
 
@@ -42,11 +36,8 @@ ENABLE_ARIA2 = get_env("ENABLE_ARIA2")
 
 RCLONE_PATH = get_env("RCLONE")
 
-# payment settings
-ENABLE_VIP = get_env("ENABLE_VIP")
-PROVIDER_TOKEN = get_env("PROVIDER_TOKEN")
-FREE_DOWNLOAD = get_env("FREE_DOWNLOAD", 3)
-TOKEN_PRICE = get_env("TOKEN_PRICE", 10)  # 1 USD=10 downloads
+# admin settings
+ADMIN_IDS = get_env("ADMIN_IDS", "")  # comma-separated admin user IDs
 
 # For advance users
 # Please do not change, if you don't know what these are.

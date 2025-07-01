@@ -23,12 +23,8 @@ from tqdm import tqdm
 from config import TG_NORMAL_MAX_SIZE, Types
 from database import Redis
 from database.model import (
-    check_quota,
     get_format_settings,
-    get_free_quota,
-    get_paid_quota,
     get_quality_settings,
-    use_quota,
 )
 from engine.helper import debounce, sizeof_fmt
 
@@ -70,12 +66,8 @@ class BaseDownloader(ABC):
         self._tempdir.cleanup()
 
     def _record_usage(self):
-        free, paid = get_free_quota(self._from_user), get_paid_quota(self._from_user)
-        logging.info("User %s has %s free and %s paid quota", self._from_user, free, paid)
-        if free + paid < 0:
-            raise Exception("Usage limit exceeded")
-
-        use_quota(self._from_user)
+        # Access control will be handled elsewhere - no quota system
+        logging.info("User %s is downloading content", self._from_user)
 
     @staticmethod
     def __remove_bash_color(text):
@@ -322,7 +314,7 @@ class BaseDownloader(ABC):
 
     @final
     def start(self):
-        check_quota(self._from_user)
+        # Access control will be handled at the handler level
         if cache := self._get_video_cache():
             logging.info("Cache hit for %s", self._url)
             meta, file_id = json.loads(cache["meta"]), json.loads(cache["file_id"])

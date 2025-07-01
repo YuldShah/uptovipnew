@@ -1,17 +1,10 @@
 # ytdlbot
 
-[![docker image](https://github.com/tgbot-collection/ytdlbot/actions/workflows/builder.yaml/badge.svg)](https://github.com/tgbot-collection/ytdlbot/actions/workflows/builder.yaml)
+**YouTube Download Bot**
 
-**YouTube Download Bot🚀🎬⬇️**
-
-This Telegram bot allows you to download videos from YouTube and [other supported websites](#supported-websites).
+This Telegram bot allows you to download videos from YouTube and other supported websites.
 
 # Usage
-
-* EU🇪🇺: [https://t.me/benny_2ytdlbot](https://t.me/benny_2ytdlbot)
-* Singapore🇸🇬:[https://t.me/benny_ytdlbot](https://t.me/benny_ytdlbot)
-
-* Join Telegram Channel https://t.me/ytdlbot0 for updates.
 
 Just send a link directly to the bot.
 
@@ -27,17 +20,12 @@ Just send a link directly to the bot.
 
 # Features
 
-1. fast download and upload.
-2. No ads
-3. download & upload progress bar
-4. download quality selection
-5. upload format: file, video, audio
-6. cache mechanism - download once for the same video.
-7. Supports multiple download engines (yt-dlp, aria2, requests).
-
-> ## Limitations
-> Due to limitations on servers and bandwidth, there are some restrictions on this free service.
-> * Each user is limited to 1 free downloads every day.
+1. Fast download and upload
+2. Download & upload progress bar
+3. Download quality selection
+4. Upload format: file, video, audio
+5. Cache mechanism - download once for the same video
+6. Supports multiple download engines (yt-dlp, aria2, requests)
 
 # Screenshots
 
@@ -93,9 +81,6 @@ This bot can be deployed on any platform that supports Python.
     - `AUDIO_FORMAT`: Desired audio format (e.g.:- mp3, wav)
     - `ENABLE_ARIA2`: Enable Aria2 for downloads (True/False)
     - `RCLONE_PATH`: Path to Rclone executable
-    - `ENABLE_VIP`: Enable VIP features (True/False)
-    - `PROVIDER_TOKEN`: Payment provider token from Stripe
-    - `FREE_DOWNLOAD`: Free downloads allowed per user
     - `RATE_LIMIT`: Rate limit for requests
     - `TMPFILE_PATH`: Path for temporary/download files (ensure the directory exists and is writable)
     - `TG_NORMAL_MAX_SIZE`: Maximum size for Telegram uploads in MB
@@ -113,10 +98,10 @@ This bot can be deployed on any platform that supports Python.
 One line command to run the bot
 
 ```shell
-docker run --env-file .env bennythink/ytdlbot
+docker run --env-file .env ytdlbot
 ```
 
-# Command
+# Commands
 
 ```
 start - Let's start
@@ -129,7 +114,6 @@ settings - Set your preference
 unsub - Unsubscribe from YouTube Channel
 ping - Ping the Bot
 stats - Server and bot stats
-buy - Buy quota.
 ```
 
 # Test data
@@ -143,11 +127,6 @@ https://www.youtube.com/watch?v=V3RtA-1b_2E
 ## Test Playlist
 
 https://www.youtube.com/playlist?list=PL1Hdq7xjQCJxQnGc05gS4wzHWccvEJy0w
-
-## Test twitter
-
-https://twitter.com/nitori_sayaka/status/1526199729864200192
-https://twitter.com/BennyThinks/status/1475836588542341124
 
 ## Test instagram
 
@@ -166,34 +145,6 @@ https://pixeldrain.com/u/765ijw9i
 https://krakenfiles.com/view/oqmSTF0T5t/file.html
 
 </details>
-
-# Donation
-
-Found this bot useful? You can donate to support the development of this bot.
-
-## Donation Platforms
-
-* [Buy me a coffee](https://www.buymeacoffee.com/bennythink)
-* [GitHub Sponsor](https://github.com/sponsors/BennyThink)
-
-## Stripe
-
-You can choose to donate via Stripe.
-
-| USD(Card, Apple Pay and Google Pay)              | CNY(Card, Apple Pay, Google Pay and Alipay)      |
-|--------------------------------------------------|--------------------------------------------------|
-| [USD](https://buy.stripe.com/cN203sdZB98RevC3cd) | [CNY](https://buy.stripe.com/dR67vU4p13Ox73a6oq) |
-| ![](assets/USD.png)                              | ![](assets/CNY.png)                              |
-
-## Cryptocurrency
-
-TRX or USDT(TRC20)
-
-![](assets/tron.png)
-
-```
-TF9peZjC2FYjU4xNMPg3uP4caYLJxtXeJS
-```
 
 # License
 

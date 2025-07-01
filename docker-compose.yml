@@ -34,7 +34,7 @@ services:
         max-file: "3"
 
   ytdl:
-    image: bennythink/ytdlbot
+    image: ytdlbot
     env_file:
       - .env
     restart: always

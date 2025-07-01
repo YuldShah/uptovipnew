@@ -1,12 +1,6 @@
 #!/usr/local/bin/python3
 # coding: utf-8
 
-# ytdlbot - new.py
-# 8/14/21 14:37
-#
-
-__author__ = "Benny <benny.think@gmail.com>"
-
 import logging
 import os
 import re
@@ -30,20 +24,14 @@ from config import (
     ENABLE_ARIA2,
     ENABLE_FFMPEG,
     M3U8_SUPPORT,
-    ENABLE_VIP,
     OWNER,
-    PROVIDER_TOKEN,
-    TOKEN_PRICE,
     BotText,
 )
 from database.model import (
-    credit_account,
     get_format_settings,
-    get_free_quota,
-    get_paid_quota,
     get_quality_settings,
+    get_user_access_status,
     init_user,
-    reset_free,
     set_user_settings,
 )
 from engine import direct_entrance, youtube_entrance, special_download_entrance
@@ -98,10 +86,9 @@ def start_handler(client: Client, message: types.Message):
     init_user(from_id)
     logging.info("%s welcome to youtube-dl bot!", message.from_user.id)
     client.send_chat_action(from_id, enums.ChatAction.TYPING)
-    free, paid = get_free_quota(from_id), get_paid_quota(from_id)
     client.send_message(
         from_id,
-        BotText.start + f"You have {free} free and {paid} paid quota.",
+        BotText.start,
         disable_web_page_preview=True,
     )
 
@@ -144,63 +131,6 @@ def ping_handler(client: Client, message: types.Message):
 
     thread = threading.Thread(target=send_message_and_measure_ping)
     thread.start()
-
-
-@app.on_message(filters.command(["buy"]))
-def buy(client: Client, message: types.Message):
-    markup = types.InlineKeyboardMarkup(
-        [
-            [  # First row
-                types.InlineKeyboardButton("10-$1", callback_data="buy-10-1"),
-                types.InlineKeyboardButton("20-$2", callback_data="buy-20-2"),
-                types.InlineKeyboardButton("40-$3.5", callback_data="buy-40-3.5"),
-            ],
-            [  # second row
-                types.InlineKeyboardButton("50-$4", callback_data="buy-50-4"),
-                types.InlineKeyboardButton("75-$6", callback_data="buy-75-6"),
-                types.InlineKeyboardButton("100-$8", callback_data="buy-100-8"),
-            ],
-        ]
-    )
-    message.reply_text("Please choose the amount you want to buy.", reply_markup=markup)
-
-
-@app.on_callback_query(filters.regex(r"buy.*"))
-def send_invoice(client: Client, callback_query: types.CallbackQuery):
-    chat_id = callback_query.message.chat.id
-    data = callback_query.data
-    _, count, price = data.split("-")
-    price = int(float(price) * 100)
-    client.send_invoice(
-        chat_id,
-        f"{count} permanent download quota",
-        "Please make a payment via Stripe",
-        f"{count}",
-        "USD",
-        [types.LabeledPrice(label="VIP", amount=price)],
-        provider_token=os.getenv("PROVIDER_TOKEN"),
-        protect_content=True,
-        start_parameter="no-forward-placeholder",
-    )
-
-
-@app.on_pre_checkout_query()
-def pre_checkout(client: Client, query: types.PreCheckoutQuery):
-    client.answer_pre_checkout_query(query.id, ok=True)
-
-
-@app.on_message(filters.successful_payment)
-def successful_payment(client: Client, message: types.Message):
-    who = message.chat.id
-    amount = message.successful_payment.total_amount  # in cents
-    quota = int(message.successful_payment.invoice_payload)
-    ch = message.successful_payment.provider_payment_charge_id
-    free, paid = credit_account(who, amount, quota, ch)
-    if paid > 0:
-        message.reply_text(f"Payment successful! You now have {free} free and {paid} paid quota.")
-    else:
-        message.reply_text("Something went wrong. Please contact the admin.")
-    message.delete()
 
 
 @app.on_message(filters.command(["stats"]))
@@ -401,16 +331,13 @@ def quality_callback(client: Client, callback_query: types.CallbackQuery):
 
 if __name__ == "__main__":
     botStartTime = time.time()
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(reset_free, "cron", hour=0, minute=0)
-    scheduler.start()
     banner = f"""
 ▌ ▌         ▀▛▘     ▌       ▛▀▖              ▜            ▌
 ▝▞  ▞▀▖ ▌ ▌  ▌  ▌ ▌ ▛▀▖ ▞▀▖ ▌ ▌ ▞▀▖ ▌  ▌ ▛▀▖ ▐  ▞▀▖ ▝▀▖ ▞▀▌
  ▌  ▌ ▌ ▌ ▌  ▌  ▌ ▌ ▌ ▌ ▛▀  ▌ ▌ ▌ ▌ ▐▐▐  ▌ ▌ ▐  ▌ ▌ ▞▀▌ ▌ ▌
  ▘  ▝▀  ▝▀▘  ▘  ▝▀▘ ▀▀  ▝▀▘ ▀▀  ▝▀   ▘▘  ▘ ▘  ▘ ▝▀  ▝▀▘ ▝▀▘
 
-By @BennyThink, VIP Mode: {ENABLE_VIP} 
+YouTube Download Bot - Access Control Mode
     """
     print(banner)
     app.run()
