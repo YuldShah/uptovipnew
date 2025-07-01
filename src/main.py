@@ -1,6 +1,7 @@
 #!/usr/local/bin/python3
 # coding: utf-8
 
+import asyncio
 import logging
 import os
 import re
@@ -69,12 +70,8 @@ def private_use(func):
 
         # Access control check
         if chat_id:
-            # Run async access check in sync context
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
             try:
-                access_result = loop.run_until_complete(check_full_user_access(client, chat_id))
+                access_result = asyncio.run(check_full_user_access(client, chat_id))
                 if not access_result['has_access']:
                     denial_message = get_access_denied_message(access_result)
                     message.reply_text(denial_message, quote=True)
@@ -88,8 +85,6 @@ def private_use(func):
                 logging.error(f"Error checking access for user {chat_id}: {e}")
                 message.reply_text("❌ **Access Check Failed**\n\nThere was an error verifying your access. Please try again later.", quote=True)
                 return
-            finally:
-                loop.close()
 
         return func(client, message)
 

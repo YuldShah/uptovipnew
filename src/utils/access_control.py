@@ -5,8 +5,8 @@ import asyncio
 import logging
 from typing import List, Tuple
 
-from kurigram import Client
-from kurigram.errors import FloodWait, UserNotParticipant, ChannelPrivate, ChatAdminRequired
+from pyrogram import Client
+from pyrogram.errors import FloodWait, UserNotParticipant, ChannelPrivate, ChatAdminRequired
 
 from config.config import ADMIN_IDS, ACCESS_CONTROL_ENABLED
 from database.model import check_user_access, get_required_channels

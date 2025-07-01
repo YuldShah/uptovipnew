@@ -6,9 +6,9 @@ import asyncio
 import logging
 from typing import List, Dict
 
-from kurigram import Client, filters
-from kurigram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from kurigram.errors import FloodWait, UserNotParticipant, ChannelPrivate, ChatAdminRequired
+from pyrogram import Client, filters
+from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.errors import FloodWait, UserNotParticipant, ChannelPrivate, ChatAdminRequired
 
 from config.config import ADMIN_IDS
 from database.model import (
@@ -293,6 +293,32 @@ async def handle_admin_message(client: Client, message: Message):
         await handle_user_management_message(client, message, session)
 
 
+def admin_session_filter(_, __, message):
+    """Custom filter for admin messages with active sessions"""
+    if not message.from_user:
+        return False
+    
+    user_id = message.from_user.id
+    
+    # Check if user is admin
+    if user_id not in get_admin_list():
+        return False
+    
+    # Check if user has active session
+    if user_id not in admin_sessions:
+        return False
+    
+    # Don't process commands
+    if message.text and message.text.startswith('/'):
+        return False
+    
+    return True
+
+
+# Create the custom filter
+admin_session = filters.create(admin_session_filter)
+
+
 async def handle_add_channel_message(client: Client, message: Message, session: dict):
     """Handle channel addition process"""
     user_id = message.from_user.id
@@ -312,6 +338,7 @@ async def handle_add_channel_message(client: Client, message: Message, session: 
         # Check if text message with channel info
         elif message.text:
             text = message.text.strip()
+            username = None  # Initialize username variable
             
             # Pattern matching for different formats
             if text.startswith("@"):
@@ -330,7 +357,7 @@ async def handle_add_channel_message(client: Client, message: Message, session: 
                 return
             
             # Get chat info if we have username
-            if not channel_id and 'username' in locals():
+            if not channel_id and username is not None:
                 try:
                     chat = await client.get_chat(f"@{username}")
                     channel_id = chat.id
@@ -466,4 +493,4 @@ def register_admin_handlers(app):
     """Register all admin handlers"""
     app.on_message(filters.command("admin") & filters.private)(admin_command)
     app.on_callback_query(filters.regex(r"^(access_menu|manage_channels|manual_access|add_channel|remove_channel_|remove_all_channels|confirm_|whitelist_user|ban_user|check_user|access_stats|close_admin).*"))(admin_callback_handler)
-    app.on_message(filters.private & ~filters.command(["start", "help", "about", "admin"]))(handle_admin_message)
+    app.on_message(filters.private & admin_session)(handle_admin_message)
