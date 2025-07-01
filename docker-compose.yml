@@ -12,24 +12,20 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  mysql:
-    image: ubuntu/mysql:8.0-22.04_beta
+  postgres:
+    image: postgres:15-alpine
     restart: always
     volumes:
-      - ./db_data:/var/lib/mysql
+      - ./db_data:/var/lib/postgresql/data
     environment:
-      MYSQL_ROOT_PASSWORD: "root"
+      POSTGRES_DB: "ytdlbot"
+      POSTGRES_USER: "ytdlbot"
+      POSTGRES_PASSWORD: "ytdlbot"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "pg_isready -U ytdlbot -d ytdlbot"]
       interval: 10s
       timeout: 5s
       retries: 3
-    command:
-      - --default-authentication-plugin=mysql_native_password
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      - --explicit_defaults_for_timestamp=1
-      - --max_allowed_packet=64M
     logging:
       options:
         max-size: "10m"
@@ -45,5 +41,5 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      mysql:
+      postgres:
         condition: service_healthy

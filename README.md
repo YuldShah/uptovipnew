@@ -85,7 +85,7 @@ This bot can be deployed on any platform that supports Python.
     - `BOT_TOKEN`: Your telegram bot token
     - `OWNER`: Owner ID (separate by `,`)
     - `AUTHORIZED_USER`: List of authorized users ids, (separate by `,`)
-    - `DB_DSN`: Your database URL (mysql+pymysql://user:pass@mysql/dbname) or SQLite (sqlite:///db.sqlite)
+    - `DB_DSN`: Your database URL (postgresql+psycopg2://user:pass@postgres/dbname) or SQLite (sqlite:///db.sqlite)
     - `REDIS_HOST`: Redis host
 
     **- Optional Fields**
