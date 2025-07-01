@@ -39,6 +39,9 @@ from database.model import (
     create_youtube_format_session,
     get_youtube_format_session,
     delete_youtube_format_session,
+    log_user_activity,
+    log_download_attempt,
+    log_download_completion,
 )
 from engine import direct_entrance, youtube_entrance, special_download_entrance
 from engine.youtube_formats import extract_youtube_formats, is_youtube_url
@@ -55,6 +58,7 @@ from keyboards.main import (
 )
 from utils import extract_url_and_name, sizeof_fmt, timeof_fmt
 from utils.access_control import check_full_user_access, get_access_denied_message, is_admin
+from utils.stats_logger import start_stats_logging, stop_stats_logging
 
 logging.info("Authorized users are %s", AUTHORIZED_USER)
 logging.getLogger("apscheduler.executors.default").propagate = False
@@ -112,6 +116,10 @@ def private_use(func):
 async def start_handler(client: Client, message: types.Message):
     from_id = message.chat.id
     init_user(from_id)
+    
+    # Log user activity
+    log_user_activity(from_id, 'start', {'command': 'start'})
+    
     logging.info("%s welcome to youtube-dl bot!", message.from_user.id)
     await client.send_chat_action(from_id, enums.ChatAction.TYPING)
     
@@ -133,6 +141,10 @@ async def start_handler(client: Client, message: types.Message):
 async def settings_keyboard_handler(client: Client, message: types.Message):
     chat_id = message.chat.id
     init_user(chat_id)
+    
+    # Log user activity
+    log_user_activity(chat_id, 'settings', {'action': 'view_settings'})
+    
     await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
     
     quality = get_quality_settings(chat_id)
@@ -332,6 +344,11 @@ async def download_handler(client: Client, message: types.Message):
         
         # Regular download mode - check if it's a YouTube URL for dynamic format selection
         if is_youtube_url(url):
+            # Log download attempt
+            platform = "youtube"
+            download_id = log_download_attempt(chat_id, url, platform)
+            log_user_activity(chat_id, 'download', {'platform': platform, 'url': url, 'download_id': download_id})
+            
             # Extract available formats
             try:
                 formats = extract_youtube_formats(url)
@@ -357,6 +374,18 @@ async def download_handler(client: Client, message: types.Message):
             except Exception as e:
                 logging.error(f"Error extracting YouTube formats: {e}")
                 # Fallback to regular download
+        else:
+            # Log download attempt for non-YouTube platforms
+            platform = "other"
+            if "instagram" in url.lower():
+                platform = "instagram"
+            elif "pixeldrain" in url.lower():
+                platform = "pixeldrain"
+            elif "krakenfiles" in url.lower():
+                platform = "krakenfiles"
+            
+            download_id = log_download_attempt(chat_id, url, platform)
+            log_user_activity(chat_id, 'download', {'platform': platform, 'url': url, 'download_id': download_id})
         
         # Regular download for non-YouTube URLs or YouTube fallback
         bot_msg: types.Message | Any = await message.reply_text("Task received.", quote=True)
@@ -609,11 +638,22 @@ if __name__ == "__main__":
  ▌  ▌ ▌ ▌ ▌  ▌  ▌ ▌ ▌ ▌ ▛▀  ▌ ▌ ▌ ▌ ▐▐▐  ▌ ▌ ▐  ▌ ▌ ▞▀▌ ▌ ▌
  ▘  ▝▀  ▝▀▘  ▘  ▝▀▘ ▀▀  ▝▀▘ ▀▀  ▝▀   ▘▘  ▘ ▘  ▘ ▝▀  ▝▀▘ ▝▀▘
 
-YouTube Download Bot - Access Control Mode
+YouTube Download Bot - Access Control Mode with Analytics
     """
     print(banner)
     
     # Register admin handlers
     register_admin_handlers(app)
     
-    app.run()
+    # Start system statistics logging
+    start_stats_logging()
+    
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+        stop_stats_logging()
+    except Exception as e:
+        print(f"Bot crashed: {e}")
+        stop_stats_logging()
+        raise

@@ -14,7 +14,9 @@ from config.config import ADMIN_IDS
 from database.model import (
     add_channel, remove_channel, get_required_channels, 
     set_user_access_status, get_user_access_status,
-    session_manager, User
+    session_manager, User,
+    get_download_statistics, get_user_activity_statistics,
+    log_user_activity
 )
 from utils.access_control import get_admin_list
 
@@ -49,6 +51,8 @@ def create_access_menu():
         [InlineKeyboardButton("📢 Manage Channels", callback_data="manage_channels")],
         [InlineKeyboardButton("👤 Manual Access", callback_data="manual_access")],
         [InlineKeyboardButton("📊 Access Stats", callback_data="access_stats")],
+        [InlineKeyboardButton("📈 Download Analytics", callback_data="download_analytics")],
+        [InlineKeyboardButton("👥 User Analytics", callback_data="user_analytics")],
         [InlineKeyboardButton("❌ Close", callback_data="close_admin")]
     ])
 
@@ -270,7 +274,165 @@ async def admin_callback_handler(client: Client, callback_query: CallbackQuery):
     
     elif data == "close_admin":
         await callback_query.message.delete()
-
+    
+    elif data == "download_analytics":
+        stats = get_download_statistics(7)  # Last 7 days
+        
+        if stats:
+            text = (
+                "📈 **Download Analytics** (Last 7 Days)\n\n"
+                f"📊 **Overview:**\n"
+                f"• Total Downloads: {stats.get('total_downloads', 0)}\n"
+                f"• ✅ Successful: {stats.get('successful_downloads', 0)}\n"
+                f"• ❌ Failed: {stats.get('failed_downloads', 0)}\n"
+                f"• Success Rate: {stats.get('success_rate', 0)}%\n\n"
+            )
+            
+            # Platform stats
+            platform_stats = stats.get('platform_stats', {})
+            if platform_stats:
+                text += "🌐 **Platform Breakdown:**\n"
+                for platform, count in platform_stats.items():
+                    text += f"• {platform.title()}: {count}\n"
+                text += "\n"
+            
+            # Average file size
+            avg_size = stats.get('average_file_size', 0)
+            if avg_size > 0:
+                text += f"💾 **Average File Size:** {avg_size / (1024*1024):.1f} MB\n\n"
+            
+            text += "💡 *Analytics are updated in real-time*"
+        else:
+            text = "📈 **Download Analytics**\n\nNo download data available yet."
+        
+        await callback_query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Refresh", callback_data="download_analytics")],
+                [InlineKeyboardButton("📅 Last 30 Days", callback_data="download_analytics_30")],
+                [InlineKeyboardButton("🔙 Back", callback_data="access_menu")]
+            ])
+        )
+    
+    elif data == "download_analytics_30":
+        stats = get_download_statistics(30)  # Last 30 days
+        
+        if stats:
+            text = (
+                "📈 **Download Analytics** (Last 30 Days)\n\n"
+                f"📊 **Overview:**\n"
+                f"• Total Downloads: {stats.get('total_downloads', 0)}\n"
+                f"• ✅ Successful: {stats.get('successful_downloads', 0)}\n"
+                f"• ❌ Failed: {stats.get('failed_downloads', 0)}\n"
+                f"• Success Rate: {stats.get('success_rate', 0)}%\n\n"
+            )
+            
+            # Platform stats
+            platform_stats = stats.get('platform_stats', {})
+            if platform_stats:
+                text += "🌐 **Platform Breakdown:**\n"
+                for platform, count in platform_stats.items():
+                    text += f"• {platform.title()}: {count}\n"
+                text += "\n"
+            
+            # Average file size
+            avg_size = stats.get('average_file_size', 0)
+            if avg_size > 0:
+                text += f"💾 **Average File Size:** {avg_size / (1024*1024):.1f} MB\n\n"
+            
+            text += "💡 *Extended analytics for monthly overview*"
+        else:
+            text = "📈 **Download Analytics**\n\nNo download data available yet."
+        
+        await callback_query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Refresh", callback_data="download_analytics_30")],
+                [InlineKeyboardButton("📅 Last 7 Days", callback_data="download_analytics")],
+                [InlineKeyboardButton("🔙 Back", callback_data="access_menu")]
+            ])
+        )
+    
+    elif data == "user_analytics":
+        stats = get_user_activity_statistics(7)  # Last 7 days
+        
+        if stats:
+            text = (
+                "👥 **User Analytics** (Last 7 Days)\n\n"
+                f"👤 **Active Users:** {stats.get('active_users', 0)}\n\n"
+            )
+            
+            # Activity breakdown
+            activity_breakdown = stats.get('activity_breakdown', {})
+            if activity_breakdown:
+                text += "📊 **Activity Breakdown:**\n"
+                for activity, count in activity_breakdown.items():
+                    activity_name = {
+                        'start': '🚀 Bot Starts',
+                        'download': '📥 Downloads',
+                        'settings': '⚙️ Settings',
+                        'admin': '🔧 Admin Actions'
+                    }.get(activity, activity.title())
+                    text += f"• {activity_name}: {count}\n"
+                text += "\n"
+            
+            # Daily active users
+            daily_users = stats.get('daily_active_users', {})
+            if daily_users:
+                text += "📅 **Daily Active Users:**\n"
+                for date, count in list(daily_users.items())[:3]:  # Show last 3 days
+                    text += f"• {date}: {count} users\n"
+                text += "\n"
+            
+            text += "💡 *User activity tracking helps optimize bot performance*"
+        else:
+            text = "👥 **User Analytics**\n\nNo activity data available yet."
+        
+        await callback_query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Refresh", callback_data="user_analytics")],
+                [InlineKeyboardButton("📅 Last 30 Days", callback_data="user_analytics_30")],
+                [InlineKeyboardButton("🔙 Back", callback_data="access_menu")]
+            ])
+        )
+    
+    elif data == "user_analytics_30":
+        stats = get_user_activity_statistics(30)  # Last 30 days
+        
+        if stats:
+            text = (
+                "👥 **User Analytics** (Last 30 Days)\n\n"
+                f"👤 **Active Users:** {stats.get('active_users', 0)}\n\n"
+            )
+            
+            # Activity breakdown
+            activity_breakdown = stats.get('activity_breakdown', {})
+            if activity_breakdown:
+                text += "📊 **Activity Breakdown:**\n"
+                for activity, count in activity_breakdown.items():
+                    activity_name = {
+                        'start': '🚀 Bot Starts',
+                        'download': '📥 Downloads',
+                        'settings': '⚙️ Settings',
+                        'admin': '🔧 Admin Actions'
+                    }.get(activity, activity.title())
+                    text += f"• {activity_name}: {count}\n"
+                text += "\n"
+            
+            text += "💡 *Extended user analytics for monthly trends*"
+        else:
+            text = "👥 **User Analytics**\n\nNo activity data available yet."
+        
+        await callback_query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Refresh", callback_data="user_analytics_30")],
+                [InlineKeyboardButton("📅 Last 7 Days", callback_data="user_analytics")],
+                [InlineKeyboardButton("🔙 Back", callback_data="access_menu")]
+            ])
+        )
+    
 
 async def handle_admin_message(client: Client, message: Message):
     """Handle admin session messages"""
@@ -492,5 +654,5 @@ async def handle_user_management_message(client: Client, message: Message, sessi
 def register_admin_handlers(app):
     """Register all admin handlers"""
     app.on_message(filters.command("admin") & filters.private)(admin_command)
-    app.on_callback_query(filters.regex(r"^(access_menu|manage_channels|manual_access|add_channel|remove_channel_|remove_all_channels|confirm_|whitelist_user|ban_user|check_user|access_stats|close_admin).*"))(admin_callback_handler)
+    app.on_callback_query(filters.regex(r"^(access_menu|manage_channels|manual_access|add_channel|remove_channel_|remove_all_channels|confirm_|whitelist_user|ban_user|check_user|access_stats|download_analytics|user_analytics|close_admin).*"))(admin_callback_handler)
     app.on_message(filters.private & admin_session)(handle_admin_message)
