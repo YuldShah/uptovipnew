@@ -39,6 +39,9 @@ RCLONE_PATH = get_env("RCLONE")
 # admin settings
 ADMIN_IDS = get_env("ADMIN_IDS", "")  # comma-separated admin user IDs
 
+# access control settings
+ACCESS_CONTROL_ENABLED = get_env("ACCESS_CONTROL_ENABLED", True)  # enable access control
+
 # For advance users
 # Please do not change, if you don't know what these are.
 TG_NORMAL_MAX_SIZE = 2000 * 1024 * 1024

@@ -5,11 +5,14 @@ import logging
 import math
 import os
 from contextlib import contextmanager
-from typing import Literal
+from typing import Literal, List
+from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
+    DateTime,
     Enum,
     Float,
     ForeignKey,
@@ -34,6 +37,7 @@ class User(Base):
     config = Column(JSON)
 
     settings = relationship("Setting", back_populates="user", cascade="all, delete-orphan", uselist=False)
+    channels = relationship("Channel", back_populates="user", cascade="all, delete-orphan")
 
 
 class Setting(Base):
@@ -45,6 +49,20 @@ class Setting(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     user = relationship("User", back_populates="settings")
+
+
+class Channel(Base):
+    __tablename__ = "channels"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    channel_id = Column(BigInteger, unique=True, nullable=False)  # telegram channel id
+    channel_name = Column(String, nullable=True)  # optional channel name
+    channel_link = Column(String, nullable=True)  # optional channel link
+    is_active = Column(Boolean, default=True)
+    added_by = Column(BigInteger, nullable=False)  # admin who added it
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="channels")
 
 
 def create_session():
@@ -129,3 +147,139 @@ def set_user_access_status(uid: int, status: int):
             user.access_status = status
         else:
             session.add(User(user_id=uid, access_status=status))
+
+
+# Channel Management Functions
+def add_required_channel(channel_id: int, channel_name: str = None, added_by: int = None) -> bool:
+    """Add a channel to the required channels list"""
+    with session_manager() as session:
+        existing = session.query(Channel).filter(Channel.channel_id == channel_id).first()
+        if existing:
+            existing.is_active = True
+            existing.channel_name = channel_name or existing.channel_name
+            return True
+        else:
+            session.add(Channel(
+                channel_id=channel_id,
+                channel_name=channel_name,
+                added_by=added_by or 0,
+                is_active=True
+            ))
+            return True
+
+
+def remove_required_channel(channel_id: int) -> bool:
+    """Remove a channel from the required channels list"""
+    with session_manager() as session:
+        channel = session.query(Channel).filter(Channel.channel_id == channel_id).first()
+        if channel:
+            channel.is_active = False
+            return True
+        return False
+
+
+def add_channel(channel_id: int, channel_name: str = None, channel_link: str = None, added_by: int = None) -> bool:
+    """Add a required channel"""
+    with session_manager() as session:
+        # Check if channel already exists
+        existing = session.query(Channel).filter(Channel.channel_id == channel_id).first()
+        if existing:
+            return False
+        
+        channel = Channel(
+            channel_id=channel_id,
+            channel_name=channel_name,
+            channel_link=channel_link,
+            added_by=added_by
+        )
+        session.add(channel)
+        return True
+
+
+def remove_channel(channel_db_id: int) -> bool:
+    """Remove a required channel by database ID"""
+    with session_manager() as session:
+        channel = session.query(Channel).filter(Channel.id == channel_db_id).first()
+        if channel:
+            session.delete(channel)
+            return True
+        return False
+
+
+def get_required_channels() -> List[dict]:
+    """Get all required channels"""
+    with session_manager() as session:
+        channels = session.query(Channel).filter(Channel.is_active == True).all()
+        return [
+            {
+                'id': ch.id,
+                'channel_id': ch.channel_id,
+                'channel_name': ch.channel_name,
+                'channel_link': ch.channel_link,
+                'added_by': ch.added_by,
+                'created_at': ch.created_at
+            }
+            for ch in channels
+        ]
+
+
+def get_channel_by_id(channel_id: int) -> dict:
+    """Get channel information by channel ID"""
+    with session_manager() as session:
+        channel = session.query(Channel).filter(Channel.channel_id == channel_id).first()
+        if channel:
+            return {
+                'id': channel.id,
+                'channel_id': channel.channel_id,
+                'channel_name': channel.channel_name,
+                'added_by': channel.added_by,
+                'created_at': channel.created_at,
+                'is_active': channel.is_active
+            }
+        return None
+
+
+# Access Control Functions
+def check_user_access(uid: int, admins: List[int] = None) -> dict:
+    """
+    Check if user has access to the bot
+    Returns: {
+        'has_access': bool,
+        'reason': str,  # 'admin', 'whitelisted', 'channel_member', 'banned', 'no_access'
+        'user_status': int
+    }
+    """
+    # Check if user is banned
+    user_status = get_user_access_status(uid)
+    if user_status == -1:
+        return {'has_access': False, 'reason': 'banned', 'user_status': user_status}
+    
+    # Check if user is admin
+    if admins and uid in admins:
+        return {'has_access': True, 'reason': 'admin', 'user_status': user_status}
+    
+    # Check if user is whitelisted
+    if user_status == 1:
+        return {'has_access': True, 'reason': 'whitelisted', 'user_status': user_status}
+    
+    # For normal users (status 0), they need channel membership
+    return {'has_access': False, 'reason': 'needs_channel_check', 'user_status': user_status}
+
+
+def get_user_info(uid: int) -> dict:
+    """Get comprehensive user information"""
+    with session_manager() as session:
+        user = session.query(User).filter(User.user_id == uid).first()
+        if user:
+            return {
+                'user_id': user.user_id,
+                'access_status': user.access_status,
+                'access_status_text': {
+                    -1: 'Banned',
+                    0: 'Normal',
+                    1: 'Whitelisted'
+                }.get(user.access_status, 'Unknown'),
+                'has_settings': user.settings is not None,
+                'config': user.config
+            }
+        return None

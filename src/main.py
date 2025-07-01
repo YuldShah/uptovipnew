@@ -35,7 +35,9 @@ from database.model import (
     set_user_settings,
 )
 from engine import direct_entrance, youtube_entrance, special_download_entrance
+from handlers.admin import register_admin_handlers
 from utils import extract_url_and_name, sizeof_fmt, timeof_fmt
+from utils.access_control import check_full_user_access, get_access_denied_message
 
 logging.info("Authorized users are %s", AUTHORIZED_USER)
 logging.getLogger("apscheduler.executors.default").propagate = False
@@ -65,15 +67,29 @@ def private_use(func):
             logging.debug("%s, it's annoying me...🙄️ ", message.text)
             return
 
-        # authorized users check
-        if AUTHORIZED_USER:
-            users = [int(i) for i in AUTHORIZED_USER.split(",")]
-        else:
-            users = []
-
-        if users and chat_id and chat_id not in users:
-            message.reply_text("BotText.private", quote=True)
-            return
+        # Access control check
+        if chat_id:
+            # Run async access check in sync context
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                access_result = loop.run_until_complete(check_full_user_access(client, chat_id))
+                if not access_result['has_access']:
+                    denial_message = get_access_denied_message(access_result)
+                    message.reply_text(denial_message, quote=True)
+                    logging.info(f"Access denied for user {chat_id}: {access_result['reason']}")
+                    return
+                
+                # Log successful access
+                logging.info(f"Access granted for user {chat_id}: {access_result['reason']}")
+                
+            except Exception as e:
+                logging.error(f"Error checking access for user {chat_id}: {e}")
+                message.reply_text("❌ **Access Check Failed**\n\nThere was an error verifying your access. Please try again later.", quote=True)
+                return
+            finally:
+                loop.close()
 
         return func(client, message)
 
@@ -340,4 +356,8 @@ if __name__ == "__main__":
 YouTube Download Bot - Access Control Mode
     """
     print(banner)
+    
+    # Register admin handlers
+    register_admin_handlers(app)
+    
     app.run()

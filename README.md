@@ -26,6 +26,11 @@ Just send a link directly to the bot.
 4. Upload format: file, video, audio
 5. Cache mechanism - download once for the same video
 6. Supports multiple download engines (yt-dlp, aria2, requests)
+7. **Access Control System**:
+   - Admin-only access or channel membership required
+   - Manual user whitelist/ban management
+   - Admin interface for channel management
+   - Flexible access control settings
 
 # Screenshots
 
@@ -75,12 +80,14 @@ This bot can be deployed on any platform that supports Python.
     - `AUTHORIZED_USER`: List of authorized users ids, (separate by `,`)
     - `DB_DSN`: Your database URL (postgresql+psycopg2://user:pass@postgres/dbname) or SQLite (sqlite:///db.sqlite)
     - `REDIS_HOST`: Redis host
+    - `ADMIN_IDS`: Admin user IDs for access control management (separate by `,`)
 
     **- Optional Fields**
     - `ENABLE_FFMPEG`: Enable FFMPEG for video processing (True/False)
     - `AUDIO_FORMAT`: Desired audio format (e.g.:- mp3, wav)
     - `ENABLE_ARIA2`: Enable Aria2 for downloads (True/False)
     - `RCLONE_PATH`: Path to Rclone executable
+    - `ACCESS_CONTROL_ENABLED`: Enable access control system (True/False, default: True)
     - `RATE_LIMIT`: Rate limit for requests
     - `TMPFILE_PATH`: Path for temporary/download files (ensure the directory exists and is writable)
     - `TG_NORMAL_MAX_SIZE`: Maximum size for Telegram uploads in MB
@@ -103,6 +110,7 @@ docker run --env-file .env ytdlbot
 
 # Commands
 
+## User Commands
 ```
 start - Let's start
 about - What's this bot?
@@ -115,6 +123,16 @@ unsub - Unsubscribe from YouTube Channel
 ping - Ping the Bot
 stats - Server and bot stats
 ```
+
+## Admin Commands
+```
+admin - Access admin panel for managing bot access control
+```
+
+**Admin Panel Features:**
+- 📢 **Manage Channels**: Add/remove required channels for user access
+- 👤 **Manual Access**: Whitelist or ban users manually
+- 📊 **Access Stats**: View access control statistics
 
 # Test data
 
