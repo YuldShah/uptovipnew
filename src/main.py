@@ -34,11 +34,27 @@ from database.model import (
     get_user_access_status,
     init_user,
     set_user_settings,
+    get_user_platform_quality,
+    set_user_platform_quality,
+    create_youtube_format_session,
+    get_youtube_format_session,
+    delete_youtube_format_session,
 )
 from engine import direct_entrance, youtube_entrance, special_download_entrance
+from engine.youtube_formats import extract_youtube_formats, is_youtube_url
 from handlers.admin import register_admin_handlers
+from keyboards.main import (
+    create_main_keyboard,
+    create_admin_keyboard,
+    create_settings_keyboard,
+    create_format_settings_keyboard,
+    create_youtube_quality_keyboard,
+    create_platform_quality_keyboard,
+    create_youtube_format_keyboard,
+    create_back_keyboard,
+)
 from utils import extract_url_and_name, sizeof_fmt, timeof_fmt
-from utils.access_control import check_full_user_access, get_access_denied_message
+from utils.access_control import check_full_user_access, get_access_denied_message, is_admin
 
 logging.info("Authorized users are %s", AUTHORIZED_USER)
 logging.getLogger("apscheduler.executors.default").propagate = False
@@ -60,21 +76,21 @@ app = create_app("main")
 
 
 def private_use(func):
-    def wrapper(client: Client, message: types.Message):
+    async def wrapper(client: Client, message: types.Message):
         chat_id = getattr(message.from_user, "id", None)
 
-        # message type check
-        if message.chat.type != enums.ChatType.PRIVATE and not getattr(message, "text", "").lower().startswith("/ytdl"):
-            logging.debug("%s, it's annoying me...🙄️ ", message.text)
+        # Only allow private chats for this bot now
+        if message.chat.type != enums.ChatType.PRIVATE:
+            logging.debug("Ignoring group/channel message: %s", message.text)
             return
 
         # Access control check
         if chat_id:
             try:
-                access_result = asyncio.run(check_full_user_access(client, chat_id))
+                access_result = await check_full_user_access(client, chat_id)
                 if not access_result['has_access']:
                     denial_message = get_access_denied_message(access_result)
-                    message.reply_text(denial_message, quote=True)
+                    await message.reply_text(denial_message, quote=True)
                     logging.info(f"Access denied for user {chat_id}: {access_result['reason']}")
                     return
                 
@@ -83,72 +99,67 @@ def private_use(func):
                 
             except Exception as e:
                 logging.error(f"Error checking access for user {chat_id}: {e}")
-                message.reply_text("❌ **Access Check Failed**\n\nThere was an error verifying your access. Please try again later.", quote=True)
+                await message.reply_text("❌ **Access Check Failed**\n\nThere was an error verifying your access. Please try again later.", quote=True)
                 return
 
-        return func(client, message)
+        return await func(client, message)
 
     return wrapper
 
 
 @app.on_message(filters.command(["start"]))
-def start_handler(client: Client, message: types.Message):
+@private_use
+async def start_handler(client: Client, message: types.Message):
     from_id = message.chat.id
     init_user(from_id)
     logging.info("%s welcome to youtube-dl bot!", message.from_user.id)
-    client.send_chat_action(from_id, enums.ChatAction.TYPING)
-    client.send_message(
+    await client.send_chat_action(from_id, enums.ChatAction.TYPING)
+    
+    # Check if user is admin to show admin keyboard
+    admin_status = await is_admin(client, from_id)
+    keyboard = create_admin_keyboard() if admin_status else create_main_keyboard()
+    
+    await client.send_message(
         from_id,
         BotText.start,
         disable_web_page_preview=True,
+        reply_markup=keyboard
     )
 
 
-@app.on_message(filters.command(["help"]))
-def help_handler(client: Client, message: types.Message):
+# Keyboard message handlers
+@app.on_message(filters.text & filters.regex(r"^⚙️ Settings$"))
+@private_use
+async def settings_keyboard_handler(client: Client, message: types.Message):
     chat_id = message.chat.id
     init_user(chat_id)
-    client.send_chat_action(chat_id, enums.ChatAction.TYPING)
-    client.send_message(chat_id, BotText.help, disable_web_page_preview=True)
+    await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
+    
+    quality = get_quality_settings(chat_id)
+    send_type = get_format_settings(chat_id)
+    platform_quality = get_user_platform_quality(chat_id)
+    
+    settings_text = f"""⚙️ **Current Settings**
+
+📁 **Upload Format:** `{send_type}`
+🎬 **YouTube Quality:** `{quality}`
+🌐 **Platform Quality:** `{platform_quality}`
+
+Select an option to change:"""
+    
+    await client.send_message(
+        chat_id, 
+        settings_text, 
+        reply_markup=create_settings_keyboard()
+    )
 
 
-@app.on_message(filters.command(["about"]))
-def about_handler(client: Client, message: types.Message):
+@app.on_message(filters.text & filters.regex(r"^📊 Stats$"))
+@private_use
+async def stats_keyboard_handler(client: Client, message: types.Message):
     chat_id = message.chat.id
     init_user(chat_id)
-    client.send_chat_action(chat_id, enums.ChatAction.TYPING)
-    client.send_message(chat_id, BotText.about)
-
-
-@app.on_message(filters.command(["ping"]))
-def ping_handler(client: Client, message: types.Message):
-    chat_id = message.chat.id
-    init_user(chat_id)
-    client.send_chat_action(chat_id, enums.ChatAction.TYPING)
-
-    def send_message_and_measure_ping():
-        start_time = int(round(time.time() * 1000))
-        reply: types.Message | typing.Any = client.send_message(chat_id, "Starting Ping...")
-
-        end_time = int(round(time.time() * 1000))
-        ping_time = int(round(end_time - start_time))
-        message_sent = True
-        if message_sent:
-            message.reply_text(f"Ping: {ping_time:.2f} ms", quote=True)
-        time.sleep(0.5)
-        client.edit_message_text(chat_id=reply.chat.id, message_id=reply.id, text="Ping Calculation Complete.")
-        time.sleep(1)
-        client.delete_messages(chat_id=reply.chat.id, message_ids=reply.id)
-
-    thread = threading.Thread(target=send_message_and_measure_ping)
-    thread.start()
-
-
-@app.on_message(filters.command(["stats"]))
-def stats_handler(client: Client, message: types.Message):
-    chat_id = message.chat.id
-    init_user(chat_id)
-    client.send_chat_action(chat_id, enums.ChatAction.TYPING)
+    await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
     cpu_usage = psutil.cpu_percent()
     total, used, free, disk = psutil.disk_usage("/")
     swap = psutil.swap_memory()
@@ -189,96 +200,77 @@ def stats_handler(client: Client, message: types.Message):
         f"<b>🤖Bot Uptime:</b> {timeof_fmt(time.time() - botStartTime)}\n"
     )
 
-    if message.from_user.id in OWNER:
-        message.reply_text(owner_stats, quote=True)
-    else:
-        message.reply_text(user_stats, quote=True)
+    is_owner = await is_admin(client, message.from_user.id)
+    await message.reply_text(owner_stats if is_owner else user_stats, quote=True)
 
 
-@app.on_message(filters.command(["settings"]))
-def settings_handler(client: Client, message: types.Message):
+@app.on_message(filters.text & filters.regex(r"^ℹ️ About$"))
+@private_use
+async def about_keyboard_handler(client: Client, message: types.Message):
     chat_id = message.chat.id
     init_user(chat_id)
-    client.send_chat_action(chat_id, enums.ChatAction.TYPING)
-    markup = types.InlineKeyboardMarkup(
-        [
-            [  # First row
-                types.InlineKeyboardButton("send as document", callback_data="document"),
-                types.InlineKeyboardButton("send as video", callback_data="video"),
-                types.InlineKeyboardButton("send as audio", callback_data="audio"),
-            ],
-            [  # second row
-                types.InlineKeyboardButton("High Quality", callback_data="high"),
-                types.InlineKeyboardButton("Medium Quality", callback_data="medium"),
-                types.InlineKeyboardButton("Low Quality", callback_data="low"),
-            ],
-        ]
+    await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
+    await client.send_message(chat_id, BotText.about)
+
+
+@app.on_message(filters.text & filters.regex(r"^❓ Help$"))
+@private_use
+async def help_keyboard_handler(client: Client, message: types.Message):
+    chat_id = message.chat.id
+    init_user(chat_id)
+    await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
+    await client.send_message(chat_id, BotText.help, disable_web_page_preview=True)
+
+
+@app.on_message(filters.text & filters.regex(r"^🏓 Ping$"))
+@private_use
+async def ping_keyboard_handler(client: Client, message: types.Message):
+    chat_id = message.chat.id
+    init_user(chat_id)
+    await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
+
+    async def send_message_and_measure_ping():
+        start_time = int(round(time.time() * 1000))
+        reply: types.Message | typing.Any = await client.send_message(chat_id, "Starting Ping...")
+
+        end_time = int(round(time.time() * 1000))
+        ping_time = int(round(end_time - start_time))
+        message_sent = True
+        if message_sent:
+            await message.reply_text(f"Ping: {ping_time:.2f} ms", quote=True)
+        await asyncio.sleep(0.5)
+        await client.edit_message_text(chat_id=reply.chat.id, message_id=reply.id, text="Ping Calculation Complete.")
+        await asyncio.sleep(1)
+        await client.delete_messages(chat_id=reply.chat.id, message_ids=reply.id)
+
+    # Run ping measurement in the background
+    asyncio.create_task(send_message_and_measure_ping())
+
+
+@app.on_message(filters.text & filters.regex(r"^📥 Direct Download$"))
+@private_use
+async def direct_download_keyboard_handler(client: Client, message: types.Message):
+    chat_id = message.chat.id
+    init_user(chat_id)
+    set_user_state(chat_id, "direct_download")
+    await client.send_message(
+        chat_id,
+        "📥 **Direct Download Mode**\n\nSend me a direct link to download the file directly using aria2/requests.\n\n_Send any other message to cancel._",
+        reply_markup=create_back_keyboard()
     )
 
-    quality = get_quality_settings(chat_id)
-    send_type = get_format_settings(chat_id)
-    client.send_message(chat_id, BotText.settings.format(quality, send_type), reply_markup=markup)
 
-
-@app.on_message(filters.command(["direct"]))
-def direct_download(client: Client, message: types.Message):
+@app.on_message(filters.text & filters.regex(r"^🔗 Special Download$"))
+@private_use
+async def special_download_keyboard_handler(client: Client, message: types.Message):
     chat_id = message.chat.id
     init_user(chat_id)
-    client.send_chat_action(chat_id, enums.ChatAction.TYPING)
-    message_text = message.text
-    url, new_name = extract_url_and_name(message_text)
-    logging.info("Direct download using aria2/requests start %s", url)
-    if url is None or not re.findall(r"^https?://", url.lower()):
-        message.reply_text("Send me a correct LINK.", quote=True)
-        return
-    bot_msg = message.reply_text("Direct download request received.", quote=True)
-    try:
-        direct_entrance(client, bot_msg, url)
-    except ValueError as e:
-        message.reply_text(e.__str__(), quote=True)
-        bot_msg.delete()
-        return
-
-
-@app.on_message(filters.command(["spdl"]))
-def spdl_handler(client: Client, message: types.Message):
-    chat_id = message.chat.id
-    init_user(chat_id)
-    client.send_chat_action(chat_id, enums.ChatAction.TYPING)
-    message_text = message.text
-    url, new_name = extract_url_and_name(message_text)
-    logging.info("spdl start %s", url)
-    if url is None or not re.findall(r"^https?://", url.lower()):
-        message.reply_text("Something wrong 🤔.\nCheck your URL and send me again.", quote=True)
-        return
-    bot_msg = message.reply_text("SPDL request received.", quote=True)
-    try:
-        special_download_entrance(client, bot_msg, url)
-    except ValueError as e:
-        message.reply_text(e.__str__(), quote=True)
-        bot_msg.delete()
-        return
-
-
-@app.on_message(filters.command(["ytdl"]) & filters.group)
-def ytdl_handler(client: Client, message: types.Message):
-    # for group only
-    init_user(message.from_user.id)
-    client.send_chat_action(message.chat.id, enums.ChatAction.TYPING)
-    message_text = message.text
-    url, new_name = extract_url_and_name(message_text)
-    logging.info("ytdl start %s", url)
-    if url is None or not re.findall(r"^https?://", url.lower()):
-        message.reply_text("Check your URL.", quote=True)
-        return
-
-    bot_msg = message.reply_text("Group download request received.", quote=True)
-    try:
-        youtube_entrance(client, bot_msg, url)
-    except ValueError as e:
-        message.reply_text(e.__str__(), quote=True)
-        bot_msg.delete()
-        return
+    set_user_state(chat_id, "special_download")
+    await client.send_message(
+        chat_id,
+        "🔗 **Special Download Mode**\n\nSend me a link for special download processing (Instagram, Pixeldrain, Krakenfiles).\n\n_Send any other message to cancel._",
+        reply_markup=create_back_keyboard()
+    )
 
 
 def check_link(url: str):
@@ -291,39 +283,308 @@ def check_link(url: str):
         return "m3u8 links are disabled."
 
 
-@app.on_message(filters.incoming & filters.text)
+@app.on_message(filters.incoming & filters.text & ~filters.regex(r"^(⚙️|📊|ℹ️|❓|🏓|📥|🔗|🔧)"))
 @private_use
-def download_handler(client: Client, message: types.Message):
+async def download_handler(client: Client, message: types.Message):
     chat_id = message.from_user.id
     init_user(chat_id)
-    client.send_chat_action(chat_id, enums.ChatAction.TYPING)
+    await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
     url = message.text
     logging.info("start %s", url)
 
+    # Check user state for special download modes
+    user_state = get_user_state(chat_id)
+    
     try:
+        # Validate URL format
+        if not re.findall(r"^https?://", url.lower()):
+            if user_state:
+                clear_user_state(chat_id)
+                await message.reply_text("❌ **Mode Cancelled**\n\nInvalid URL format. Please use a valid HTTP/HTTPS URL.", quote=True)
+            else:
+                await message.reply_text("❌ **Invalid URL**\n\nPlease send a valid HTTP/HTTPS URL.", quote=True)
+            return
+        
         check_link(url)
-        # raise pyrogram.errors.exceptions.FloodWait(10)
-        bot_msg: types.Message | Any = message.reply_text("Task received.", quote=True)
-        client.send_chat_action(chat_id, enums.ChatAction.UPLOAD_VIDEO)
+        
+        # Handle different download modes based on user state
+        if user_state == "direct_download":
+            clear_user_state(chat_id)
+            logging.info("Direct download using aria2/requests start %s", url)
+            bot_msg = await message.reply_text("📥 Direct download request received.", quote=True)
+            try:
+                direct_entrance(client, bot_msg, url)
+            except ValueError as e:
+                await message.reply_text(e.__str__(), quote=True)
+                await bot_msg.delete()
+            return
+            
+        elif user_state == "special_download":
+            clear_user_state(chat_id)
+            logging.info("Special download start %s", url)
+            bot_msg = await message.reply_text("🔗 Special download request received.", quote=True)
+            try:
+                special_download_entrance(client, bot_msg, url)
+            except ValueError as e:
+                await message.reply_text(e.__str__(), quote=True)
+                await bot_msg.delete()
+            return
+        
+        # Regular download mode - check if it's a YouTube URL for dynamic format selection
+        if is_youtube_url(url):
+            # Extract available formats
+            try:
+                formats = extract_youtube_formats(url)
+                if formats and (formats.get('video_formats') or formats.get('audio_formats')):
+                    # Create a session for this user and URL
+                    create_youtube_format_session(chat_id, url, formats)
+                    
+                    # Send format selection keyboard
+                    format_keyboard = create_youtube_format_keyboard(formats)
+                    await message.reply_text(
+                        "🎬 **YouTube Format Selection**\n\n"
+                        "Choose your preferred format and quality:\n"
+                        "• Video formats include both video and audio\n"
+                        "• Audio formats are audio-only\n"
+                        "• File sizes are estimates",
+                        reply_markup=format_keyboard,
+                        quote=True
+                    )
+                    return
+                else:
+                    # Fallback to regular download if format extraction fails
+                    logging.warning("Could not extract YouTube formats, falling back to regular download")
+            except Exception as e:
+                logging.error(f"Error extracting YouTube formats: {e}")
+                # Fallback to regular download
+        
+        # Regular download for non-YouTube URLs or YouTube fallback
+        bot_msg: types.Message | Any = await message.reply_text("Task received.", quote=True)
+        await client.send_chat_action(chat_id, enums.ChatAction.UPLOAD_VIDEO)
         youtube_entrance(client, bot_msg, url)
+        
     except pyrogram.errors.Flood as e:
+        clear_user_state(chat_id)  # Clear state on flood
         f = BytesIO()
         f.write(str(e).encode())
         f.write(b"Your job will be done soon. Just wait!")
         f.name = "Please wait.txt"
-        message.reply_document(f, caption=f"Flood wait! Please wait {e} seconds...", quote=True)
+        await message.reply_document(f, caption=f"Flood wait! Please wait {e} seconds...", quote=True)
         f.close()
-        client.send_message(OWNER, f"Flood wait! 🙁 {e} seconds....")
-        time.sleep(e.value)
+        await client.send_message(OWNER, f"Flood wait! 🙁 {e} seconds....")
+        await asyncio.sleep(e.value)
     except ValueError as e:
-        message.reply_text(e.__str__(), quote=True)
+        clear_user_state(chat_id)  # Clear state on error
+        await message.reply_text(e.__str__(), quote=True)
     except Exception as e:
+        clear_user_state(chat_id)  # Clear state on error
         logging.error("Download failed", exc_info=True)
-        message.reply_text(f"❌ Download failed: {e}", quote=True)
+        await message.reply_text(f"❌ Download failed: {e}", quote=True)
 
 
+# Simple state management for user modes
+user_states = {}
+
+def set_user_state(user_id, state):
+    """Set user state for mode tracking"""
+    user_states[user_id] = state
+
+def get_user_state(user_id):
+    """Get user state"""
+    return user_states.get(user_id, None)
+
+def clear_user_state(user_id):
+    """Clear user state"""
+    user_states.pop(user_id, None)
+
+
+# Callback query handlers for inline keyboards
+@app.on_callback_query(filters.regex(r"^settings_"))
+def settings_callback_handler(client: Client, callback_query: types.CallbackQuery):
+    chat_id = callback_query.message.chat.id
+    data = callback_query.data
+    
+    if data == "settings_format":
+        current_format = get_format_settings(chat_id)
+        callback_query.edit_message_text(
+            f"📁 **Upload Format Settings**\n\nCurrently set to: `{current_format}`\n\nChoose your preferred format:",
+            reply_markup=create_format_settings_keyboard()
+        )
+    elif data == "settings_youtube_quality":
+        current_quality = get_quality_settings(chat_id)
+        callback_query.edit_message_text(
+            f"🎬 **YouTube Quality Settings**\n\nCurrently set to: `{current_quality}`\n\nChoose your preferred YouTube quality:",
+            reply_markup=create_youtube_quality_keyboard()
+        )
+    elif data == "settings_platform_quality":
+        current_quality = get_user_platform_quality(chat_id)
+        callback_query.edit_message_text(
+            f"🌐 **Platform Quality Settings**\n\nCurrently set to: `{current_quality}`\n\nChoose your preferred quality for non-YouTube platforms:",
+            reply_markup=create_platform_quality_keyboard()
+        )
+    
+    callback_query.answer()
+
+
+@app.on_callback_query(filters.regex(r"^format_"))
+def format_callback_handler(client: Client, callback_query: types.CallbackQuery):
+    chat_id = callback_query.message.chat.id
+    data = callback_query.data.replace("format_", "")
+    
+    logging.info("Setting %s file format to %s", chat_id, data)
+    set_user_settings(chat_id, "format", data)
+    
+    callback_query.answer(f"✅ Upload format set to {data}")
+    
+    # Go back to settings
+    quality = get_quality_settings(chat_id)
+    send_type = get_format_settings(chat_id)
+    platform_quality = get_user_platform_quality(chat_id)
+    
+    settings_text = f"""⚙️ **Current Settings**
+
+📁 **Upload Format:** `{send_type}`
+🎬 **YouTube Quality:** `{quality}`
+🌐 **Platform Quality:** `{platform_quality}`
+
+Select an option to change:"""
+    
+    callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
+
+
+@app.on_callback_query(filters.regex(r"^youtube_quality_"))
+def youtube_quality_callback_handler(client: Client, callback_query: types.CallbackQuery):
+    chat_id = callback_query.message.chat.id
+    data = callback_query.data.replace("youtube_quality_", "")
+    
+    logging.info("Setting %s YouTube quality to %s", chat_id, data)
+    set_user_settings(chat_id, "quality", data)
+    
+    callback_query.answer(f"✅ YouTube quality set to {data}")
+    
+    # Go back to settings
+    quality = get_quality_settings(chat_id)
+    send_type = get_format_settings(chat_id)
+    platform_quality = get_user_platform_quality(chat_id)
+    
+    settings_text = f"""⚙️ **Current Settings**
+
+📁 **Upload Format:** `{send_type}`
+🎬 **YouTube Quality:** `{quality}`
+🌐 **Platform Quality:** `{platform_quality}`
+
+Select an option to change:"""
+    
+    callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
+
+
+@app.on_callback_query(filters.regex(r"^platform_quality_"))
+def platform_quality_callback_handler(client: Client, callback_query: types.CallbackQuery):
+    chat_id = callback_query.message.chat.id
+    data = callback_query.data.replace("platform_quality_", "")
+    
+    logging.info("Setting %s platform quality to %s", chat_id, data)
+    set_user_platform_quality(chat_id, data)
+    
+    callback_query.answer(f"✅ Platform quality set to {data}")
+    
+    # Go back to settings
+    quality = get_quality_settings(chat_id)
+    send_type = get_format_settings(chat_id)
+    platform_quality = get_user_platform_quality(chat_id)
+    
+    settings_text = f"""⚙️ **Current Settings**
+
+📁 **Upload Format:** `{send_type}`
+🎬 **YouTube Quality:** `{quality}`
+🌐 **Platform Quality:** `{platform_quality}`
+
+Select an option to change:"""
+    
+    callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
+
+
+@app.on_callback_query(filters.regex(r"^back_to_"))
+def back_navigation_handler(client: Client, callback_query: types.CallbackQuery):
+    chat_id = callback_query.message.chat.id
+    data = callback_query.data
+    
+    # Clear any user state when going back to main
+    clear_user_state(chat_id)
+    
+    if data == "back_to_main":
+        callback_query.edit_message_text(
+            "🏠 **Main Menu**\n\nUse the keyboard below to navigate:",
+            reply_markup=None
+        )
+    elif data == "back_to_settings":
+        quality = get_quality_settings(chat_id)
+        send_type = get_format_settings(chat_id)
+        platform_quality = get_user_platform_quality(chat_id)
+        
+        settings_text = f"""⚙️ **Current Settings**
+
+📁 **Upload Format:** `{send_type}`
+🎬 **YouTube Quality:** `{quality}`
+🌐 **Platform Quality:** `{platform_quality}`
+
+Select an option to change:"""
+        
+        callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
+    
+    callback_query.answer()
+
+
+@app.on_callback_query(filters.regex(r"^yt_format_"))
+def youtube_format_callback_handler(client: Client, callback_query: types.CallbackQuery):
+    chat_id = callback_query.message.chat.id
+    format_id = callback_query.data.replace("yt_format_", "")
+    
+    # Get the session data
+    session = get_youtube_format_session(chat_id)
+    if not session:
+        callback_query.answer("❌ Session expired. Please send the URL again.")
+        return
+    
+    logging.info("User %s selected YouTube format %s for URL %s", chat_id, format_id, session.url)
+    
+    # Start download with selected format
+    try:
+        callback_query.edit_message_text("🔄 **Download Started**\n\nProcessing your request...")
+        
+        # Create a pseudo bot message for the download process
+        bot_msg = callback_query.message
+        
+        # Use the youtube_entrance with specific format
+        youtube_entrance(client, bot_msg, session.url, specific_format=format_id)
+        
+        # Clean up the session
+        delete_youtube_format_session(chat_id)
+        
+    except Exception as e:
+        logging.error("YouTube download failed", exc_info=True)
+        callback_query.edit_message_text(f"❌ **Download Failed**\n\n{str(e)}")
+        delete_youtube_format_session(chat_id)
+    
+    callback_query.answer()
+
+
+@app.on_callback_query(filters.regex(r"^cancel_format_selection$"))
+def cancel_format_selection_handler(client: Client, callback_query: types.CallbackQuery):
+    chat_id = callback_query.message.chat.id
+    
+    # Clean up the session
+    delete_youtube_format_session(chat_id)
+    
+    callback_query.edit_message_text(
+        "❌ **Format Selection Cancelled**\n\nYou can send another URL to try again."
+    )
+    callback_query.answer("Format selection cancelled")
+
+
+# Legacy callback handlers for compatibility
 @app.on_callback_query(filters.regex(r"document|video|audio"))
-def format_callback(client: Client, callback_query: types.CallbackQuery):
+def legacy_format_callback(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     data = callback_query.data
     logging.info("Setting %s file type to %s", chat_id, data)
@@ -332,7 +593,7 @@ def format_callback(client: Client, callback_query: types.CallbackQuery):
 
 
 @app.on_callback_query(filters.regex(r"high|medium|low"))
-def quality_callback(client: Client, callback_query: types.CallbackQuery):
+def legacy_quality_callback(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     data = callback_query.data
     logging.info("Setting %s download quality to %s", chat_id, data)

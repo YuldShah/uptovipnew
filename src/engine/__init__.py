@@ -13,8 +13,8 @@ from engine.instagram import InstagramDownload
 from engine.krakenfiles import krakenfiles_download
 
 
-def youtube_entrance(client, bot_message, url):
-    youtube = YoutubeDownload(client, bot_message, url)
+def youtube_entrance(client, bot_message, url, specific_format=None):
+    youtube = YoutubeDownload(client, bot_message, url, specific_format=specific_format)
     youtube.start()
 
 

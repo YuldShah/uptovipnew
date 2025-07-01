@@ -34,22 +34,37 @@ def get_env_required_channels() -> List[int]:
 
 async def check_channel_membership(client: Client, user_id: int, channel_id: int) -> bool:
     """Check if user is a member of a specific channel"""
-    try:
-        member = await client.get_chat_member(channel_id, user_id)
-        # Consider all non-kicked statuses as membership
-        return member.status not in ["kicked", "banned"]
-    except UserNotParticipant:
-        return False
-    except (ChannelPrivate, ChatAdminRequired):
-        logger.warning(f"Bot cannot access channel {channel_id}")
-        return True  # Give benefit of doubt if bot can't check
-    except FloodWait as e:
-        logger.warning(f"FloodWait {e.value} seconds for channel membership check")
-        await asyncio.sleep(e.value)
-        return await check_channel_membership(client, user_id, channel_id)
-    except Exception as e:
-        logger.error(f"Error checking membership for user {user_id} in channel {channel_id}: {e}")
-        return True  # Give benefit of doubt on unexpected errors
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count <= max_retries:
+        try:
+            member = await client.get_chat_member(channel_id, user_id)
+            # Consider all non-kicked statuses as membership
+            return member.status not in ["kicked", "banned"]
+        except UserNotParticipant:
+            return False
+        except (ChannelPrivate, ChatAdminRequired):
+            logger.error(f"SECURITY: Bot cannot access channel {channel_id} - lacks permissions. Denying access for user {user_id}")
+            log_channel_access_issue(channel_id, "PERMISSION_DENIED", "Bot lacks admin access to channel")
+            return False  # Fail secure - deny access when can't verify
+        except FloodWait as e:
+            if retry_count >= max_retries:
+                logger.error(f"SECURITY: Max retries ({max_retries}) reached for FloodWait in channel {channel_id} membership check for user {user_id}")
+                log_channel_access_issue(channel_id, "REPEATED_FLOOD_WAIT", f"Max retries reached, last wait: {e.value}s")
+                return False  # Fail secure - deny access after max retries
+            
+            logger.warning(f"FloodWait {e.value} seconds for channel membership check (attempt {retry_count + 1}/{max_retries + 1})")
+            await asyncio.sleep(e.value)
+            retry_count += 1
+        except Exception as e:
+            logger.error(f"SECURITY: Unexpected error checking membership for user {user_id} in channel {channel_id}: {e}")
+            log_channel_access_issue(channel_id, "UNEXPECTED_ERROR", str(e))
+            return False  # Fail secure - deny access on unexpected errors
+    
+    # This should not be reached due to the loop structure, but included for safety
+    logger.error(f"SECURITY: Unexpected code path reached in channel membership check for user {user_id}, channel {channel_id}")
+    return False  # Fail secure
 
 
 async def check_user_channel_access(client: Client, user_id: int) -> Tuple[bool, List[int]]:
@@ -165,18 +180,40 @@ def get_access_denied_message(access_result: dict) -> str:
                 "You need to be a member of at least one of the required channels to use this bot.\n\n"
                 f"**Required Channels:**\n{channel_list}"
                 f"{' and more...' if len(missing_channels) > 5 else ''}\n\n"
-                "Please join any of the required channels and try again."
+                "Please join any of the required channels and try again.\n\n"
+                "⚠️ _Note: If you believe you are already a member of a required channel, "
+                "there may be a technical issue. Please contact an administrator._"
             )
         else:
             return (
                 "🔒 **Access Denied**\n\n"
                 "You need to be a member of at least one required channel to use this bot.\n"
-                "Please contact an administrator for more information."
+                "Please contact an administrator for more information.\n\n"
+                "⚠️ _There may be a technical issue with channel verification._"
             )
     
     else:
         return (
             "❌ **Access Denied**\n\n"
             "You don't have permission to use this bot.\n"
-            "Please contact an administrator if you believe this is an error."
+            "Please contact an administrator if you believe this is an error.\n\n"
+            "⚠️ _If this issue persists, there may be a technical problem that requires admin attention._"
         )
+
+
+def log_channel_access_issue(channel_id: int, issue_type: str, details: str = ""):
+    """Log channel access issues for admin attention"""
+    logger.critical(
+        f"CHANNEL ACCESS ISSUE - ID: {channel_id}, TYPE: {issue_type}, "
+        f"DETAILS: {details}, ACTION: Admin review required"
+    )
+    # In a real implementation, you might also:
+    # - Send notification to admin chat
+    # - Store in database for admin dashboard
+    # - Send email notification
+
+
+async def is_admin(client: Client, user_id: int) -> bool:
+    """Simple admin check function"""
+    admins = get_admin_list()
+    return user_id in admins
