@@ -59,6 +59,7 @@ from keyboards.main import (
 from utils import extract_url_and_name, sizeof_fmt, timeof_fmt
 from utils.access_control import check_full_user_access, get_access_denied_message, is_admin
 from utils.stats_logger import start_stats_logging, stop_stats_logging
+from utils.error_handling import setup_comprehensive_logging, error_handler, download_error_handler
 
 logging.info("Authorized users are %s", AUTHORIZED_USER)
 logging.getLogger("apscheduler.executors.default").propagate = False
@@ -113,6 +114,7 @@ def private_use(func):
 
 @app.on_message(filters.command(["start"]))
 @private_use
+@error_handler
 async def start_handler(client: Client, message: types.Message):
     from_id = message.chat.id
     init_user(from_id)
@@ -297,6 +299,7 @@ def check_link(url: str):
 
 @app.on_message(filters.incoming & filters.text & ~filters.regex(r"^(⚙️|📊|ℹ️|❓|🏓|📥|🔗|🔧)"))
 @private_use
+@download_error_handler
 async def download_handler(client: Client, message: types.Message):
     chat_id = message.from_user.id
     init_user(chat_id)
@@ -631,6 +634,9 @@ def legacy_quality_callback(client: Client, callback_query: types.CallbackQuery)
 
 
 if __name__ == "__main__":
+    # Setup comprehensive logging first
+    setup_comprehensive_logging()
+    
     botStartTime = time.time()
     banner = f"""
 ▌ ▌         ▀▛▘     ▌       ▛▀▖              ▜            ▌
@@ -638,9 +644,13 @@ if __name__ == "__main__":
  ▌  ▌ ▌ ▌ ▌  ▌  ▌ ▌ ▌ ▌ ▛▀  ▌ ▌ ▌ ▌ ▐▐▐  ▌ ▌ ▐  ▌ ▌ ▞▀▌ ▌ ▌
  ▘  ▝▀  ▝▀▘  ▘  ▝▀▘ ▀▀  ▝▀▘ ▀▀  ▝▀   ▘▘  ▘ ▘  ▘ ▝▀  ▝▀▘ ▝▀▘
 
-YouTube Download Bot - Access Control Mode with Analytics
+YouTube Download Bot - Private Access Control Edition
+Production Ready with Enhanced Analytics & Error Handling
     """
     print(banner)
+    
+    logging.info("=== BOT STARTUP ===")
+    logging.info("Starting YouTube Download Bot - Private Edition")
     
     # Register admin handlers
     register_admin_handlers(app)
@@ -649,11 +659,17 @@ YouTube Download Bot - Access Control Mode with Analytics
     start_stats_logging()
     
     try:
+        logging.info("Bot is starting...")
         app.run()
     except KeyboardInterrupt:
-        print("\nShutting down...")
+        logging.info("Bot shutdown requested by user")
+        print("\nShutting down gracefully...")
         stop_stats_logging()
     except Exception as e:
+        logging.critical(f"Bot crashed with critical error: {e}", exc_info=True)
         print(f"Bot crashed: {e}")
         stop_stats_logging()
         raise
+    finally:
+        logging.info("=== BOT SHUTDOWN ===")
+        print("Bot stopped.")

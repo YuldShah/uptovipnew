@@ -19,6 +19,7 @@ from database.model import (
     log_user_activity
 )
 from utils.access_control import get_admin_list
+from utils.error_handling import admin_error_handler
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,7 @@ async def admin_command(client: Client, message: Message):
 
 
 @admin_callback_only
+@admin_error_handler
 async def admin_callback_handler(client: Client, callback_query: CallbackQuery):
     """Handle admin panel callbacks"""
     data = callback_query.data

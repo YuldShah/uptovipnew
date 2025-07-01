@@ -1,169 +1,315 @@
-# ytdlbot
+# YouTube Download Bot - Private Edition
 
-**YouTube Download Bot**
+**Production-Ready Private Bot with Advanced Access Control & Analytics**
 
-This Telegram bot allows you to download videos from YouTube and other supported websites.
+A completely refactored YouTube download bot designed for private use with enterprise-grade features including dynamic quality selection, comprehensive access control, advanced statistics dashboard, and robust error handling.
 
-# Usage
+## 🌟 Features
 
-Just send a link directly to the bot.
+### ✅ **Completed & Production Ready**
 
-# Supported websites
+- **🚫 Payment System Removal**: All VIP/quota/payment features completely removed
+- **🔐 Advanced Access Control**: Admin, channel membership (ANY), whitelist/ban system
+- **🎬 Dynamic Quality Selection**: Per-video YouTube format selection with inline keyboards
+- **⌨️ Keyboard-Only Navigation**: Only `/start` command, all navigation via reply/inline keyboards
+- **👨‍💼 Enhanced Admin Interface**: Complete user/channel management with search and pagination
+- **📊 Statistics Dashboard**: Download analytics, user activity tracking, system monitoring
+- **🛡️ Production Error Handling**: Comprehensive logging, graceful recovery, admin alerts
+- **📈 Real-time Analytics**: 7-day and 30-day views with platform breakdowns
+- **🔄 Background Monitoring**: Automated system stats logging and performance tracking
 
-* YouTube
-* Any websites [supported by yt-dlp](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
+### 🎯 **Key Capabilities**
 
-  ### Specific link downloader (Use /spdl for these links)
-    * Instagram (Videos, Photos, Reels, IGTV & carousel)
-    * Pixeldrain
-    * KrakenFiles
+- **Private Bot Only**: No public features, designed for controlled access
+- **Fail-Secure Access**: Denies access on any error, with detailed logging
+- **Multi-Platform Support**: YouTube (dynamic), Instagram, Pixeldrain, Krakenfiles
+- **Quality Control**: User-configurable settings for all platforms
+- **Admin Dashboard**: Real-time statistics, user management, error monitoring
+- **Enterprise Logging**: Separate logs for bot activity, errors, access control, downloads
 
-# Features
+## 🚀 Quick Start
 
-1. Fast download and upload
-2. Download & upload progress bar
-3. Download quality selection
-4. Upload format: file, video, audio
-5. Cache mechanism - download once for the same video
-6. Supports multiple download engines (yt-dlp, aria2, requests)
-7. **Access Control System**:
-   - Admin-only access or channel membership required
-   - Manual user whitelist/ban management
-   - Admin interface for channel management
-   - Flexible access control settings
+### Prerequisites
 
-# Screenshots
+- Python 3.8+
+- PostgreSQL database
+- Telegram Bot Token and API credentials
+- Admin Telegram user IDs
 
-## Normal download
+### Installation
 
-![](assets/1.jpeg)
+1. **Clone the repository**
+   ```bash
+   git clone <repository_url>
+   cd ytdlbot
+   ```
 
-## Instagram download
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-![](assets/instagram.png)
+3. **Configure environment**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your credentials
+   ```
 
-![](assets/2.jpeg)
+4. **Setup database**
+   ```bash
+   # Create PostgreSQL database
+   createdb ytdlbot
+   ```
 
-# How to deploy?
+5. **Run the bot**
+   ```bash
+   python src/main.py
+   ```
 
-This bot can be deployed on any platform that supports Python.
+### Environment Configuration
 
-## Run natively on your machine
+```env
+# Required - Telegram Bot Configuration
+BOT_TOKEN=your_bot_token_here
+APP_ID=your_app_id_here
+APP_HASH=your_app_hash_here
 
-> Project use PDM to manage dependencies.
+# Required - Admin Configuration
+ADMIN_IDS=123456789,987654321  # Comma-separated admin user IDs
 
-1. <details>
-    <summary>Install PDM</summary>
+# Optional - Database Configuration
+DATABASE_URL=postgresql://user:password@localhost:5432/ytdlbot
 
-    You can install using pip: `pip install --user pdm`
-    or for detailed instructions: [Official Docs](https://pdm-project.org/en/latest/#installation)
-  
-   </details>
-
-2. Install modules using PDM: `pdm install`, or the old way use `pip install -r requirements.txt`
-
-3. <details>
-    <summary>Setting up config file</summary>
-
-    ```
-    cp .env.example .env
-    ```
-    
-    Fill the fields in `.env`. For more information, see the comments in the `.env.example` file.
-
-    **- Required Fields**
-    - `WORKERS`: Number of workers (default is 100)
-    - `APP_ID`: Telegram app ID
-    - `APP_HASH`: Telegram app hash
-    - `BOT_TOKEN`: Your telegram bot token
-    - `OWNER`: Owner ID (separate by `,`)
-    - `AUTHORIZED_USER`: List of authorized users ids, (separate by `,`)
-    - `DB_DSN`: Your database URL (postgresql+psycopg2://user:pass@postgres/dbname) or SQLite (sqlite:///db.sqlite)
-    - `REDIS_HOST`: Redis host
-    - `ADMIN_IDS`: Admin user IDs for access control management (separate by `,`)
-
-    **- Optional Fields**
-    - `ENABLE_FFMPEG`: Enable FFMPEG for video processing (True/False)
-    - `AUDIO_FORMAT`: Desired audio format (e.g.:- mp3, wav)
-    - `ENABLE_ARIA2`: Enable Aria2 for downloads (True/False)
-    - `RCLONE_PATH`: Path to Rclone executable
-    - `ACCESS_CONTROL_ENABLED`: Enable access control system (True/False, default: True)
-    - `RATE_LIMIT`: Rate limit for requests
-    - `TMPFILE_PATH`: Path for temporary/download files (ensure the directory exists and is writable)
-    - `TG_NORMAL_MAX_SIZE`: Maximum size for Telegram uploads in MB
-    - `CAPTION_URL_LENGTH_LIMIT`: Maximum URL length in captions
-    - `POTOKEN`: Your PO Token.  [PO-Token-Guide](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide)
-    - `BROWSERS`: Browser to handle 'cookies from browser', i.e. firefox
-  </details>
-
-4. Activate virtual environment that created by PDM: `source .venv/bin/activate`
-
-5. Finally run the bot: `python src/main.py`
-
-## Docker
-
-One line command to run the bot
-
-```shell
-docker run --env-file .env ytdlbot
+# Optional - Feature Toggles
+ENABLE_ARIA2=true
+ENABLE_FFMPEG=true
+ACCESS_CONTROL_ENABLED=true
 ```
 
-# Commands
+## 📖 Usage Guide
 
-## User Commands
+### For Admins
+
+1. **Start the bot**: Send `/start` to initialize
+2. **Access admin panel**: Send `/admin` to open management interface
+3. **Setup access control**:
+   - Add required channels for user access
+   - Manage user whitelist/ban status
+   - Monitor statistics and performance
+
+### Admin Panel Features
+
+- **📢 Manage Channels**: Add/remove required channels for access
+- **👤 Manual Access**: Whitelist/ban users, search by ID
+- **📊 Access Stats**: View user counts and access patterns
+- **📈 Download Analytics**: Success rates, platform breakdown, file sizes
+- **👥 User Analytics**: Activity tracking, engagement metrics
+
+### For Users
+
+- **Navigation**: Only `/start` command, all navigation via keyboards
+- **YouTube Downloads**: Dynamic format selection per video
+- **Other Platforms**: Configurable quality settings
+- **Settings**: Upload format, quality preferences
+- **Statistics**: Personal usage stats
+
+## 🔐 Access Control System
+
+### Access Levels
+
+1. **Admin Users**: Full access to bot and admin panel
+2. **Whitelisted Users**: Permanent access regardless of channels
+3. **Normal Users**: Must be members of ANY required channel
+4. **Banned Users**: Denied access regardless of other factors
+
+### Channel Membership
+
+- Users need membership in **ANY** of the required channels (not all)
+- Bot must be admin in channels for membership verification
+- Supports private channels with proper bot permissions
+- Automatic verification with detailed error logging
+
+## 📊 Statistics & Analytics
+
+### Download Analytics
+- **Success Rates**: Track successful vs failed downloads
+- **Platform Breakdown**: Usage by platform (YouTube, Instagram, etc.)
+- **File Metrics**: Average sizes, download speeds, quality distribution
+- **Error Tracking**: Categorized failure analysis
+
+### User Analytics
+- **Activity Tracking**: Starts, downloads, settings changes
+- **Engagement Metrics**: Daily/weekly/monthly active users
+- **Usage Patterns**: Platform preferences, quality choices
+- **Growth Tracking**: User acquisition and retention
+
+### System Monitoring
+- **Performance Metrics**: CPU, memory, disk usage
+- **Error Rates**: System-wide error tracking
+- **Background Logging**: Automated 5-minute intervals
+- **Health Monitoring**: Automated alerts for critical issues
+
+## 🛡️ Error Handling & Security
+
+### Comprehensive Error Handling
+- **Graceful Recovery**: All errors handled without crashing
+- **User Notifications**: Friendly error messages for users
+- **Admin Alerts**: Detailed error reports for administrators
+- **Logging System**: Separate logs for different error types
+
+### Security Features
+- **Fail-Secure Access**: Denies access on any error
+- **Input Validation**: All user inputs sanitized
+- **Rate Limiting**: Pyrogram built-in flood protection
+- **Database Security**: Parameterized queries prevent injection
+- **Error Masking**: Sensitive information not exposed
+
+### Logging System
+- **`bot.log`**: All bot activities and debug information
+- **`errors.log`**: Error events and exceptions
+- **`access.log`**: Access control decisions and events
+- **`downloads.log`**: Download attempts and results
+
+## 🏗️ Architecture
+
+### Core Components
+
+- **Main Application**: Bot initialization and core handlers
+- **Access Control**: Authentication and authorization system
+- **Admin Interface**: Administrative functions and statistics
+- **Database Layer**: Data persistence and analytics
+- **Download Engines**: Platform-specific download logic
+- **Error Handling**: Comprehensive error management
+
+### Database Models
+
+- **Users**: Access status, settings, relationships
+- **Channels**: Required channels for access control
+- **DownloadStats**: Download tracking and analytics
+- **UserActivity**: User interaction logging
+- **SystemStats**: Performance monitoring data
+
+## 🐳 Deployment
+
+### Docker Deployment
+
+```bash
+# Build and run
+docker-compose up -d
+
+# View logs
+docker-compose logs -f ytdlbot
 ```
-start - Let's start
-about - What's this bot?
-help - Help
-spdl - Use to download specific link downloader links
-direct - Download using aria2/requests engines
-ytdl - Download video in group
-settings - Set your preference
-unsub - Unsubscribe from YouTube Channel
-ping - Ping the Bot
-stats - Server and bot stats
+
+### Systemd Service
+
+```ini
+[Unit]
+Description=YouTube Download Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ytdlbot
+WorkingDirectory=/opt/ytdlbot
+ExecStart=/opt/ytdlbot/venv/bin/python src/main.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-## Admin Commands
+## 🧪 Testing
+
+Run the comprehensive test suite:
+
+```bash
+python test_bot.py
 ```
-admin - Access admin panel for managing bot access control
+
+Tests include:
+- Database models and functions
+- Access control logic
+- Statistics system
+- Error handling
+- Configuration validation
+
+## 📁 Project Structure
+
+```
+ytdlbot/
+├── src/
+│   ├── main.py                 # Main bot application
+│   ├── config/                 # Configuration management
+│   ├── database/               # Database models and functions
+│   ├── engine/                 # Download engines
+│   ├── handlers/               # Admin interface
+│   ├── keyboards/              # UI keyboards
+│   └── utils/                  # Utilities and helpers
+├── test_bot.py                 # Comprehensive test suite
+├── DEPLOYMENT_GUIDE.md         # Detailed deployment guide
+├── requirements.txt            # Dependencies
+├── docker-compose.yml          # Docker configuration
+└── README.md                   # This file
 ```
 
-**Admin Panel Features:**
-- 📢 **Manage Channels**: Add/remove required channels for user access
-- 👤 **Manual Access**: Whitelist or ban users manually
-- 📊 **Access Stats**: View access control statistics
+## 📋 Commands
 
-# Test data
+### User Commands
+- `start` - Initialize bot and show main menu
 
-<details><summary>Tap to expand</summary>
+### Admin Commands
+- `admin` - Access admin panel for bot management
 
-## Test video
+### Admin Panel Features
+- **📢 Manage Channels**: Add/remove required channels for user access
+- **👤 Manual Access**: Whitelist or ban users manually
+- **📊 Advanced Statistics**: Comprehensive analytics dashboard
 
-https://www.youtube.com/watch?v=V3RtA-1b_2E
+## 🔧 Maintenance
 
-## Test Playlist
+### Regular Tasks
+1. Monitor logs for errors and performance issues
+2. Update yt-dlp regularly for platform compatibility
+3. Review statistics for usage patterns
+4. Backup database regularly
+5. Clean old log files
 
-https://www.youtube.com/playlist?list=PL1Hdq7xjQCJxQnGc05gS4wzHWccvEJy0w
+### Health Monitoring
+- System performance tracking every 5 minutes
+- Error rate monitoring with automatic alerts
+- Database performance and growth tracking
+- User activity and engagement analysis
 
-## Test instagram
+## 📚 Documentation
 
-* single image: https://www.instagram.com/p/CXpxSyOrWCA/
-* single video: https://www.instagram.com/p/Cah_7gnDVUW/
-* reels: https://www.instagram.com/p/C0ozGsjtY0W/
-* image carousel: https://www.instagram.com/p/C0ozPQ5o536/
-* video and image carousel: https://www.instagram.com/p/C0ozhsVo-m8/
+- **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)**: Complete setup and configuration guide
+- **[test_bot.py](test_bot.py)**: Comprehensive testing suite
+- **Inline Documentation**: Detailed code comments and docstrings
 
-## Test Pixeldrain
+## 🤝 Support
 
-https://pixeldrain.com/u/765ijw9i
+### Architecture Overview
+The bot uses a modular, production-ready architecture with:
+- Async/await for all operations
+- Comprehensive error handling
+- Database connection pooling
+- Background task management
+- Real-time monitoring and alerting
 
-## Test KrakenFiles
+### Contributing
+1. Follow existing code patterns
+2. Add comprehensive error handling
+3. Update statistics tracking
+4. Include proper logging
+5. Test all access control scenarios
+6. Update documentation
 
-https://krakenfiles.com/view/oqmSTF0T5t/file.html
+## 📄 License
 
-</details>
+Configured for private use only. All public references removed for private deployment.
 
-# License
+---
 
-Apache License 2.0
+**YouTube Download Bot - Private Edition**
+*Enterprise-grade reliability with comprehensive analytics and security*
