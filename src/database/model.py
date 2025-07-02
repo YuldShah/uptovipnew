@@ -610,6 +610,11 @@ def log_download_completion(download_id: int, success: bool, file_size: int = No
                 logging.error(f"Download record with ID {download_id} not found")
                 return False
                 
+            # Calculate download time if not provided
+            if download_time is None and stats.created_at:
+                from datetime import datetime
+                download_time = (datetime.utcnow() - stats.created_at).total_seconds()
+                
             # Update the record with completion data
             stats.success = success
             if file_size is not None:
@@ -623,7 +628,9 @@ def log_download_completion(download_id: int, success: bool, file_size: int = No
             session.commit()
             
         status = "success" if success else "failed"
-        logging.info(f"Download {download_id} completed as {status}: {stats.url} (size: {file_size}, time: {download_time}s)")
+        time_str = f"{download_time:.2f}s" if download_time is not None else "unknown"
+        size_str = f"{file_size} bytes" if file_size is not None else "unknown size"
+        logging.info(f"Download {download_id} completed as {status}: {stats.url} (size: {size_str}, time: {time_str})")
         return True
     except Exception as e:
         logging.error(f"Failed to log download completion for ID {download_id}: {e}")

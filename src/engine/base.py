@@ -54,6 +54,7 @@ class BaseDownloader(ABC):
         self._client = client
         self._url = url
         self._download_id = download_id
+        self._download_start_time = time.time()  # Track download start time
         # chat id is the same for private chat
         self._chat_id = self._from_user = bot_msg.chat.id
         if bot_msg.chat.type == enums.ChatType.GROUP or bot_msg.chat.type == enums.ChatType.SUPERGROUP:
@@ -170,7 +171,8 @@ class BaseDownloader(ABC):
         is_cache = kwargs.pop("cache", False)
         if len(files) > 1 and is_cache == False:
             inputs = generate_input_media(files, caption)
-            return await self._client.send_media_group(chat_id, inputs)[0]
+            media_group_result = await self._client.send_media_group(chat_id, inputs)
+            return media_group_result[0]
         else:
             file_arg_name = None
             if _type == "photo":
@@ -207,30 +209,68 @@ class BaseDownloader(ABC):
             logging.error("No files found in download directory")
             raise FileNotFoundError("Download failed - no files were downloaded")
         
-        video_path = files[0]
+        # Filter out partial/temporary files for metadata extraction
+        valid_files = [f for f in files if not f.name.endswith(('.part', '.tmp', '.download'))]
+        if not valid_files:
+            logging.error("No valid files found for metadata extraction")
+            raise FileNotFoundError("Download failed - only partial/temporary files found")
+        
+        video_path = valid_files[0]
         filename = Path(video_path).name
         width = height = duration = 0
+        is_corrupted = False
+        
         try:
+            # Check if file is readable before attempting ffprobe
+            if video_path.stat().st_size < 100:
+                raise Exception(f"File too small ({video_path.stat().st_size} bytes), likely corrupted")
+            
+            # Try to read file header to detect corruption early
+            with open(video_path, 'rb') as f:
+                header = f.read(1024)
+                if len(header) < 100:
+                    raise Exception("File header too small, likely corrupted")
+            
             video_streams = ffmpeg.probe(video_path, select_streams="v")
             for item in video_streams.get("streams", []):
-                height = item["height"]
-                width = item["width"]
-            duration = int(float(video_streams["format"]["duration"]))
+                height = item.get("height", 0)
+                width = item.get("width", 0)
+            duration = int(float(video_streams.get("format", {}).get("duration", 0)))
         except Exception as e:
             logging.error("Error while getting metadata: %s", e)
+            is_corrupted = True
+            # For corrupted files, we'll force document upload
+            logging.info("File appears corrupted, will force upload as document")
+            # Override format to document for corrupted files
+            if hasattr(self, '_format') and self._format == "video":
+                self._format = "document"
+                logging.info("Changed format from video to document due to corruption")
+        
         try:
             thumb = Path(video_path).parent.joinpath(f"{uuid.uuid4().hex}-thunmnail.png").as_posix()
-            # A thumbnail's width and height should not exceed 320 pixels.
-            ffmpeg.input(video_path, ss=duration / 2).filter(
-                "scale",
-                "if(gt(iw,ih),300,-1)",  # If width > height, scale width to 320 and height auto
-                "if(gt(iw,ih),-1,300)",
-            ).output(thumb, vframes=1).run()
+            # Only generate thumbnail if we have valid dimensions and duration and file is not corrupted
+            if width > 0 and height > 0 and duration > 0 and not is_corrupted:
+                # A thumbnail's width and height should not exceed 320 pixels.
+                ffmpeg.input(video_path, ss=duration / 2).filter(
+                    "scale",
+                    "if(gt(iw,ih),300,-1)",  # If width > height, scale width to 320 and height auto
+                    "if(gt(iw,ih),-1,300)",
+                ).output(thumb, vframes=1).run()
+            else:
+                thumb = None
         except ffmpeg._run.Error:
             thumb = None
+        except Exception as e:
+            logging.warning(f"Thumbnail generation failed: {e}")
+            thumb = None
 
-        caption = f"{self._url}\n{filename}\n\nResolution: {width}x{height}\nDuration: {duration} seconds"
-        return dict(height=height, width=width, duration=duration, thumb=thumb, caption=caption)
+        # Adjust caption based on corruption status
+        if is_corrupted:
+            caption = f"{self._url}\n{filename}\n\n⚠️ File may be corrupted - uploaded as document"
+        else:
+            caption = f"{self._url}\n{filename}\n\nResolution: {width}x{height}\nDuration: {duration} seconds"
+        
+        return dict(height=height, width=width, duration=duration, thumb=thumb, caption=caption, is_corrupted=is_corrupted)
 
     async def _upload(self, files=None, meta=None):
         if files is None:
@@ -248,6 +288,67 @@ class BaseDownloader(ABC):
                     "**For Instagram:** Try using a direct link or check if the content is public."
                 )
                 return
+        
+        # Validate and filter out corrupted/incomplete files
+        valid_files = []
+        for file_path in files:
+            file_path_obj = Path(file_path)
+            
+            # Skip partial/temporary files
+            if file_path_obj.name.endswith(('.part', '.tmp', '.download')):
+                logging.warning(f"Skipping partial/temporary file: {file_path}")
+                continue
+            
+            # Check if file is empty or too small
+            if file_path_obj.stat().st_size < 100:  # Less than 100 bytes
+                logging.warning(f"Skipping empty/tiny file: {file_path} (size: {file_path_obj.stat().st_size})")
+                continue
+            
+            # Check if file is readable and not corrupted
+            try:
+                with open(file_path, 'rb') as f:
+                    header = f.read(4096)  # Read more bytes for better corruption detection
+                    if len(header) < 100:
+                        logging.warning(f"Skipping file with insufficient header: {file_path}")
+                        continue
+                    
+                    # Try to seek and read from different parts of the file
+                    file_size = file_path_obj.stat().st_size
+                    if file_size > 8192:  # Only for files larger than 8KB
+                        f.seek(file_size // 2)  # Middle of file
+                        middle = f.read(1024)
+                        if len(middle) < 100:
+                            logging.warning(f"Skipping file with corrupted middle section: {file_path}")
+                            continue
+                        
+                        f.seek(-1024, 2)  # Near end of file
+                        end = f.read(1024)
+                        if len(end) < 100:
+                            logging.warning(f"Skipping file with corrupted end section: {file_path}")
+                            continue
+                
+                valid_files.append(file_path)
+                logging.info(f"File validation passed: {file_path} (size: {file_path_obj.stat().st_size})")
+            except (IOError, OSError) as e:
+                logging.warning(f"Skipping unreadable/corrupted file: {file_path} - {e}")
+                continue
+        
+        if not valid_files:
+            logging.error("Upload failed - no valid files found after validation")
+            await self._bot_msg.edit_text(
+                "❌ **Download Failed**\n\n"
+                "Downloaded files are corrupted or incomplete.\n\n"
+                "**Possible causes:**\n"
+                "• Network interruption during download\n"
+                "• Insufficient disk space\n"
+                "• Source file corruption\n"
+                "• Download timeout\n\n"
+                "Please try again or use a different quality/format."
+            )
+            return
+        
+        files = valid_files
+        logging.info(f"Validated {len(files)} files for upload: {[Path(f).name for f in files]}")
                 
         if meta is None:
             try:
@@ -290,54 +391,83 @@ class BaseDownloader(ABC):
             )
         elif self._format == "video":
             logging.info("Sending as video for %s", self._url)
-            attempt_methods = ["video", "animation", "audio", "photo"]
-            video_meta = meta.copy()
+            
+            # If file is corrupted, force document upload
+            if meta.get("is_corrupted", False):
+                logging.warning("File is corrupted, forcing document upload")
+                success = await self.send_something(
+                    chat_id=self._chat_id,
+                    files=files,
+                    _type="document",
+                    thumb=meta.get("thumb"),
+                    force_document=True,
+                    caption=meta.get("caption"),
+                )
+            else:
+                attempt_methods = ["video", "animation", "document"]  # Added document as fallback
+                video_meta = meta.copy()
 
-            upload_successful = False  # Flag to track if any method succeeded
-            for method in attempt_methods:
-                current_meta = video_meta.copy()
+                upload_successful = False  # Flag to track if any method succeeded
+                for method in attempt_methods:
+                    current_meta = video_meta.copy()
 
-                if method == "photo":
-                    current_meta.pop("thumb", None)
-                    current_meta.pop("duration", None)
-                    current_meta.pop("height", None)
-                    current_meta.pop("width", None)
-                elif method == "audio":
-                    current_meta.pop("height", None)
-                    current_meta.pop("width", None)
-
-                try:
-                    success_obj = await self.send_something(
-                        chat_id=self._chat_id,
-                        files=files,
-                        _type=method,
-                        **current_meta
-                    )
-
-                    if method == "video":
-                        success = success_obj
-                    elif method == "animation":
-                        success = success_obj
-                    elif method == "photo":
-                        success = success_obj
+                    if method == "photo":
+                        current_meta.pop("thumb", None)
+                        current_meta.pop("duration", None)
+                        current_meta.pop("height", None)
+                        current_meta.pop("width", None)
                     elif method == "audio":
-                        success = success_obj
+                        current_meta.pop("height", None)
+                        current_meta.pop("width", None)
+                    elif method == "document":
+                        # For document upload, keep basic metadata but add force_document
+                        current_meta["force_document"] = True
 
-                    upload_successful = True # Set flag to True on success
-                    break
-                except Exception as e:
-                    logging.error("Retry to send as %s, error: %s", method, e)
-
-            # Check the flag after the loop
-            if not upload_successful:
-                # Log download failure for stats
-                if self._download_id:
                     try:
-                        log_download_completion(self._download_id, False, error_message="Upload failed after all retries")
-                        logging.info(f"Logged failed download completion for download_id: {self._download_id}")
+                        success_obj = await self.send_something(
+                            chat_id=self._chat_id,
+                            files=files,
+                            _type=method,
+                            **current_meta
+                        )
+
+                        if method == "video":
+                            success = success_obj
+                        elif method == "animation":
+                            success = success_obj
+                        elif method == "document":
+                            success = success_obj
+
+                        upload_successful = True # Set flag to True on success
+                        logging.info(f"Successfully uploaded as {method}")
+                        break
                     except Exception as e:
-                        logging.error(f"Failed to log download failure: {e}")
-                raise ValueError("ERROR: For direct links, try again with `/direct`.")
+                        logging.error("Failed to send as %s, error: %s", method, e)
+                        if method == "document":
+                            # If even document upload fails, this is a serious error
+                            logging.error("Even document upload failed - file may be severely corrupted")
+
+                # Check the flag after the loop
+                if not upload_successful:
+                    # Log download failure for stats
+                    if self._download_id:
+                        try:
+                            download_time = time.time() - self._download_start_time
+                            log_download_completion(self._download_id, False, error_message="Upload failed after all retries - file may be corrupted", download_time=download_time)
+                            logging.info(f"Logged failed download completion for download_id: {self._download_id} (took {download_time:.2f}s)")
+                        except Exception as e:
+                            logging.error(f"Failed to log download failure: {e}")
+                    
+                    await self._bot_msg.edit_text(
+                        "❌ **Upload Failed**\n\n"
+                        "The downloaded file appears to be corrupted or incompatible.\n\n"
+                        "**Possible solutions:**\n"
+                        "• Try using `/direct` command for direct downloads\n"
+                        "• Try a different quality/format\n"
+                        "• Check if the source URL is still valid\n"
+                        "• Report this issue if it persists"
+                    )
+                    return
 
         else:
             logging.error("Unknown upload format settings for %s", self._format)
@@ -355,8 +485,9 @@ class BaseDownloader(ABC):
         # Log download completion for stats
         if self._download_id:
             try:
-                log_download_completion(self._download_id, True, file_size=getattr(obj, "file_size", 0))
-                logging.info(f"Logged successful download completion for download_id: {self._download_id}")
+                download_time = time.time() - self._download_start_time
+                log_download_completion(self._download_id, True, file_size=getattr(obj, "file_size", 0), download_time=download_time)
+                logging.info(f"Logged successful download completion for download_id: {self._download_id} (took {download_time:.2f}s)")
             except Exception as e:
                 logging.error(f"Failed to log download completion: {e}")
         

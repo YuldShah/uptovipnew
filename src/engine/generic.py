@@ -5,6 +5,7 @@
 
 import logging
 import os
+import time
 from pathlib import Path
 
 import yt_dlp
@@ -174,8 +175,9 @@ class YoutubeDownload(BaseDownloader):
                 # Log download failure for stats
                 if self._download_id:
                     try:
-                        log_download_completion(self._download_id, False, error_message=error_msg)
-                        logging.info(f"Logged failed download (no files) for download_id: {self._download_id}")
+                        download_time = time.time() - self._download_start_time
+                        log_download_completion(self._download_id, False, error_message=error_msg, download_time=download_time)
+                        logging.info(f"Logged failed download (no files) for download_id: {self._download_id} (took {download_time:.2f}s)")
                     except Exception as log_e:
                         logging.error(f"Failed to log download failure: {log_e}")
                 
@@ -218,8 +220,9 @@ class YoutubeDownload(BaseDownloader):
             # Log download failure for stats
             if self._download_id:
                 try:
-                    log_download_completion(self._download_id, False, error_message=error_msg)
-                    logging.info(f"Logged failed download completion for download_id: {self._download_id}")
+                    download_time = time.time() - self._download_start_time
+                    log_download_completion(self._download_id, False, error_message=error_msg, download_time=download_time)
+                    logging.info(f"Logged failed download completion for download_id: {self._download_id} (took {download_time:.2f}s)")
                 except Exception as log_e:
                     logging.error(f"Failed to log download failure: {log_e}")
             
