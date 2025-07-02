@@ -14,9 +14,9 @@ from engine.instagram import InstagramDownload
 from engine.krakenfiles import krakenfiles_download
 
 
-async def youtube_entrance(client, bot_message, url, format_id=None):
-    logging.info(f"youtube_entrance called with URL: {url}")
-    youtube = YoutubeDownload(client, bot_message, url)
+async def youtube_entrance(client, bot_message, url, format_id=None, download_id=None):
+    logging.info(f"youtube_entrance called with URL: {url}, download_id: {download_id}")
+    youtube = YoutubeDownload(client, bot_message, url, download_id)
     if format_id:
         logging.info(f"Using specific format {format_id} for URL: {url}")
         # Pass specific format to download - format_id should be the yt-dlp format specifier
@@ -27,24 +27,24 @@ async def youtube_entrance(client, bot_message, url, format_id=None):
         await youtube.start()
 
 
-async def direct_entrance(client, bot_message, url):
-    dl = DirectDownload(client, bot_message, url)
+async def direct_entrance(client, bot_message, url, download_id=None):
+    dl = DirectDownload(client, bot_message, url, download_id)
     await dl.start()
 
 
 # --- Handler for the Instagram class, to make the interface consistent ---
-async def instagram_handler(client: Any, bot_message: Any, url: str) -> None:
+async def instagram_handler(client: Any, bot_message: Any, url: str, download_id: int = None) -> None:
     """A wrapper to handle the InstagramDownload class."""
-    downloader = InstagramDownload(client, bot_message, url)
+    downloader = InstagramDownload(client, bot_message, url, download_id)
     await downloader.start()
 
-DOWNLOADER_MAP: dict[str, Callable[[Any, Any, str], Any]] = {
+DOWNLOADER_MAP: dict[str, Callable[[Any, Any, str, int], Any]] = {
     "pixeldrain.com": pixeldrain_download,
     "krakenfiles.com": krakenfiles_download,
     "instagram.com": instagram_handler,
 }
 
-async def special_download_entrance(client: Any, bot_message: Any, url: str) -> Any:
+async def special_download_entrance(client: Any, bot_message: Any, url: str, download_id: int = None) -> Any:
     try:
         hostname = urlparse(url).hostname
         if not hostname:
@@ -59,6 +59,6 @@ async def special_download_entrance(client: Any, bot_message: Any, url: str) -> 
     # Iterate through the map to find a matching handler.
     for domain_suffix, handler_function in DOWNLOADER_MAP.items():
         if hostname.endswith(domain_suffix):
-            return await handler_function(client, bot_message, url)
+            return await handler_function(client, bot_message, url, download_id)
 
     raise ValueError(f"Invalid URL: No specific downloader found for {hostname}")

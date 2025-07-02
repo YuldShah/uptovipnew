@@ -419,7 +419,7 @@ def set_user_platform_quality(uid: int, quality: str, platform: str = 'youtube')
     return set_user_settings(uid, quality=quality)
 
 
-def create_youtube_format_session(uid: int, url: str, formats: dict) -> bool:
+def create_youtube_format_session(uid: int, url: str, formats: dict, download_id: int = None) -> bool:
     """Create a YouTube format selection session for user"""
     import time
     import uuid
@@ -453,6 +453,8 @@ def create_youtube_format_session(uid: int, url: str, formats: dict) -> bool:
         user.config['youtube_url'] = url
         user.config['youtube_session_time'] = current_time
         user.config['youtube_session_id'] = session_id
+        if download_id is not None:
+            user.config['youtube_download_id'] = download_id
         
         # Mark the user as dirty to force SQLAlchemy to update
         flag_modified(user, 'config')
@@ -513,11 +515,14 @@ def get_youtube_format_session(uid: int) -> dict:
             #     return {}
                 
             logging.info(f"[SESSION_RETRIEVE] Session valid for user {uid}, returning session data for URL: {user.config['youtube_url']}")
-            return {
+            session_data = {
                 'formats': user.config['youtube_formats'],
                 'url': user.config['youtube_url'],
                 'session_id': user.config.get('youtube_session_id', 'unknown')
             }
+            if 'youtube_download_id' in user.config:
+                session_data['download_id'] = user.config['youtube_download_id']
+            return session_data
         
         logging.info(f"[SESSION_RETRIEVE] No session found for user {uid}")
         if user and user.config:
@@ -548,6 +553,9 @@ def delete_youtube_format_session(uid: int) -> bool:
                 deleted = True
             if 'youtube_session_id' in user.config:
                 del user.config['youtube_session_id']
+                deleted = True
+            if 'youtube_download_id' in user.config:
+                del user.config['youtube_download_id']
                 deleted = True
             
             if deleted:

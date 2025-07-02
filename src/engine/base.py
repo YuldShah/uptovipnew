@@ -26,6 +26,7 @@ from database import Redis
 from database.model import (
     get_format_settings,
     get_quality_settings,
+    log_download_completion,
 )
 from engine.helper import debounce, sizeof_fmt
 
@@ -48,10 +49,11 @@ def generate_input_media(file_paths: list, cap: str) -> list:
 
 
 class BaseDownloader(ABC):
-    def __init__(self, client: Types.Client, bot_msg: Types.Message, url: str):
-        logging.info(f"BaseDownloader initialized with URL: {url}")
+    def __init__(self, client: Types.Client, bot_msg: Types.Message, url: str, download_id: int = None):
+        logging.info(f"BaseDownloader initialized with URL: {url}, download_id: {download_id}")
         self._client = client
         self._url = url
+        self._download_id = download_id
         # chat id is the same for private chat
         self._chat_id = self._from_user = bot_msg.chat.id
         if bot_msg.chat.type == enums.ChatType.GROUP or bot_msg.chat.type == enums.ChatType.SUPERGROUP:
@@ -328,6 +330,13 @@ class BaseDownloader(ABC):
 
             # Check the flag after the loop
             if not upload_successful:
+                # Log download failure for stats
+                if self._download_id:
+                    try:
+                        log_download_completion(self._download_id, False, error_message="Upload failed after all retries")
+                        logging.info(f"Logged failed download completion for download_id: {self._download_id}")
+                    except Exception as e:
+                        logging.error(f"Failed to log download failure: {e}")
                 raise ValueError("ERROR: For direct links, try again with `/direct`.")
 
         else:
@@ -342,6 +351,15 @@ class BaseDownloader(ABC):
         }
 
         self._redis.add_cache(video_key, mapping)
+        
+        # Log download completion for stats
+        if self._download_id:
+            try:
+                log_download_completion(self._download_id, True, file_size=getattr(obj, "file_size", 0))
+                logging.info(f"Logged successful download completion for download_id: {self._download_id}")
+            except Exception as e:
+                logging.error(f"Failed to log download completion: {e}")
+        
         # change progress bar to done
         await self._bot_msg.edit_text("✅ Success")
         return success

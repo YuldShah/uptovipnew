@@ -333,7 +333,9 @@ async def download_handler(client: Client, message: types.Message):
             logging.info("Direct download using aria2/requests start %s", url)
             bot_msg = await message.reply_text("📥 Direct download request received.", quote=True)
             try:
-                await direct_entrance(client, bot_msg, url)
+                # Create download_id for direct downloads
+                download_id = log_download_attempt(chat_id, url, "direct")
+                await direct_entrance(client, bot_msg, url, download_id)
             except ValueError as e:
                 await message.reply_text(e.__str__(), quote=True)
                 await bot_msg.delete()
@@ -344,7 +346,9 @@ async def download_handler(client: Client, message: types.Message):
             logging.info("Special download start %s", url)
             bot_msg = await message.reply_text("🔗 Special download request received.", quote=True)
             try:
-                await special_download_entrance(client, bot_msg, url)
+                # Create download_id for special downloads
+                download_id = log_download_attempt(chat_id, url, "special")
+                await special_download_entrance(client, bot_msg, url, download_id)
             except ValueError as e:
                 await message.reply_text(e.__str__(), quote=True)
                 await bot_msg.delete()
@@ -410,7 +414,7 @@ async def download_handler(client: Client, message: types.Message):
                 
                 bot_msg = await message.reply_text("📱 Instagram download request received.", quote=True)
                 try:
-                    await special_download_entrance(client, bot_msg, url)
+                    await special_download_entrance(client, bot_msg, url, download_id)
                     return
                 except Exception as e:
                     logging.error(f"Instagram download failed: {e}")
@@ -426,7 +430,7 @@ async def download_handler(client: Client, message: types.Message):
                 
                 bot_msg = await message.reply_text("☁️ Pixeldrain download request received.", quote=True)
                 try:
-                    await special_download_entrance(client, bot_msg, url)
+                    await special_download_entrance(client, bot_msg, url, download_id)
                     return
                 except Exception as e:
                     logging.error(f"Pixeldrain download failed: {e}")
@@ -442,7 +446,7 @@ async def download_handler(client: Client, message: types.Message):
                 
                 bot_msg = await message.reply_text("🗂️ Krakenfiles download request received.", quote=True)
                 try:
-                    await special_download_entrance(client, bot_msg, url)
+                    await special_download_entrance(client, bot_msg, url, download_id)
                     return
                 except Exception as e:
                     logging.error(f"Krakenfiles download failed: {e}")
@@ -463,7 +467,7 @@ async def download_handler(client: Client, message: types.Message):
             bot_msg: types.Message | Any = await message.reply_text("Task received.", quote=True)
         
         await client.send_chat_action(chat_id, enums.ChatAction.UPLOAD_VIDEO)
-        await youtube_entrance(client, bot_msg, url)
+        await youtube_entrance(client, bot_msg, url, None, download_id)
         
     except pyrogram.errors.Flood as e:
         await clear_user_state(chat_id)  # Clear state on flood
@@ -484,9 +488,23 @@ async def download_handler(client: Client, message: types.Message):
         await asyncio.sleep(e.value)
     except ValueError as e:
         await clear_user_state(chat_id)  # Clear state on error
+        # Log download failure for stats
+        if download_id:
+            try:
+                log_download_completion(download_id, False, error_message=str(e))
+                logging.info(f"Logged failed download completion for download_id: {download_id}")
+            except Exception as log_error:
+                logging.error(f"Failed to log download failure: {log_error}")
         await message.reply_text(e.__str__(), quote=True)
     except Exception as e:
         await clear_user_state(chat_id)  # Clear state on error
+        # Log download failure for stats
+        if download_id:
+            try:
+                log_download_completion(download_id, False, error_message=str(e))
+                logging.info(f"Logged failed download completion for download_id: {download_id}")
+            except Exception as log_error:
+                logging.error(f"Failed to log download failure: {log_error}")
         logging.error("Download failed", exc_info=True)
         await message.reply_text(f"❌ Download failed: {e}", quote=True)
 
@@ -625,15 +643,26 @@ async def youtube_format_callback_handler(client: Client, callback_query: types.
         # Create a proper bot message for the download process
         bot_msg = await callback_query.message.reply_text("⏳ Preparing download...", quote=False)
         
-        # Use the youtube_entrance with specific format
-        # TODO: Implement specific format support
-        await youtube_entrance(client, bot_msg, session['url'])
+        # Use the youtube_entrance with specific format and download_id from session
+        download_id = session.get('download_id')
+        if download_id:
+            await youtube_entrance(client, bot_msg, session['url'], download_id=download_id)
+        else:
+            await youtube_entrance(client, bot_msg, session['url'])
         
         # Clean up the session
         delete_youtube_format_session(chat_id)
         
     except Exception as e:
         logging.error("YouTube download failed", exc_info=True)
+        # Log download failure for stats
+        download_id = session.get('download_id') if session else None
+        if download_id:
+            try:
+                log_download_completion(download_id, False, error_message=str(e))
+                logging.info(f"Logged failed download completion for download_id: {download_id}")
+            except Exception as log_error:
+                logging.error(f"Failed to log download failure: {log_error}")
         await callback_query.edit_message_text(f"❌ **Download Failed**\n\n{str(e)}")
         delete_youtube_format_session(chat_id)
     

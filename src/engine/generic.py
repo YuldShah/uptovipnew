@@ -11,7 +11,7 @@ import yt_dlp
 
 from config import AUDIO_FORMAT
 from utils import is_youtube
-from database.model import get_format_settings, get_quality_settings
+from database.model import get_format_settings, get_quality_settings, log_download_completion
 from engine.base import BaseDownloader
 
 
@@ -157,6 +157,7 @@ class YoutubeDownload(BaseDownloader):
             
             # Check if download was successful
             if not files:
+                error_msg = "No files were downloaded"
                 await self._bot_msg.edit_text(
                     "❌ **Download Failed**\n\n"
                     "No files were downloaded. This could be due to:\n"
@@ -169,6 +170,15 @@ class YoutubeDownload(BaseDownloader):
                     "• Adding cookies for authentication\n"
                     "• Trying again later if rate-limited"
                 )
+                
+                # Log download failure for stats
+                if self._download_id:
+                    try:
+                        log_download_completion(self._download_id, False, error_message=error_msg)
+                        logging.info(f"Logged failed download (no files) for download_id: {self._download_id}")
+                    except Exception as log_e:
+                        logging.error(f"Failed to log download failure: {log_e}")
+                
                 return
             
             await self._upload()
@@ -204,5 +214,13 @@ class YoutubeDownload(BaseDownloader):
                 )
             else:
                 await self._bot_msg.edit_text(f"❌ **Download Error**\n\n{error_msg}")
+            
+            # Log download failure for stats
+            if self._download_id:
+                try:
+                    log_download_completion(self._download_id, False, error_message=error_msg)
+                    logging.info(f"Logged failed download completion for download_id: {self._download_id}")
+                except Exception as log_e:
+                    logging.error(f"Failed to log download failure: {log_e}")
             
             raise  # Re-raise for logging purposes

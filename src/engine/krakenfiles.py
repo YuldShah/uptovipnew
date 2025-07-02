@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from engine.direct import DirectDownload
 
 
-async def krakenfiles_download(client, bot_message, url: str):
+async def krakenfiles_download(client, bot_message, url: str, download_id=None):
     session = requests.Session()
 
     def _extract_form_data(url: str) -> list[tuple[str, str]]:
@@ -57,7 +57,7 @@ async def krakenfiles_download(client, bot_message, url: str):
             download_url = _get_download_url(form_data)
 
             await bot_message.edit_text("Starting download...")
-            downloader = DirectDownload(client, bot_message, download_url)
+            downloader = DirectDownload(client, bot_message, download_url, download_id)
             await downloader.start()
 
         except ValueError as e:
