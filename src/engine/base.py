@@ -247,7 +247,7 @@ class BaseDownloader(ABC):
                 logging.info("Changed format from video to document due to corruption")
         
         try:
-            thumb = Path(video_path).parent.joinpath(f"{uuid.uuid4().hex}-thunmnail.png").as_posix()
+            thumb = Path(video_path).parent.joinpath(f"{uuid.uuid4().hex}-thumbnail.png").as_posix()
             # Only generate thumbnail if we have valid dimensions and duration and file is not corrupted
             if width > 0 and height > 0 and duration > 0 and not is_corrupted:
                 # A thumbnail's width and height should not exceed 320 pixels.
@@ -255,7 +255,7 @@ class BaseDownloader(ABC):
                     "scale",
                     "if(gt(iw,ih),300,-1)",  # If width > height, scale width to 320 and height auto
                     "if(gt(iw,ih),-1,300)",
-                ).output(thumb, vframes=1).run()
+                ).output(thumb, vframes=1, update=True).run()
             else:
                 thumb = None
         except ffmpeg._run.Error:
@@ -270,7 +270,15 @@ class BaseDownloader(ABC):
         else:
             caption = f"{self._url}\n{filename}\n\nResolution: {width}x{height}\nDuration: {duration} seconds"
         
-        return dict(height=height, width=width, duration=duration, thumb=thumb, caption=caption, is_corrupted=is_corrupted)
+        # Return clean metadata without internal flags
+        return dict(
+            height=height, 
+            width=width, 
+            duration=duration, 
+            thumb=thumb, 
+            caption=caption, 
+            is_corrupted=is_corrupted  # Keep this for internal logic only
+        )
 
     async def _upload(self, files=None, meta=None):
         if files is None:
@@ -370,7 +378,6 @@ class BaseDownloader(ABC):
                 files=files,
                 _type="document",
                 thumb=meta.get("thumb"),
-                force_document=True,
                 caption=meta.get("caption"),
             )
         elif self._format == "photo":
@@ -400,7 +407,6 @@ class BaseDownloader(ABC):
                     files=files,
                     _type="document",
                     thumb=meta.get("thumb"),
-                    force_document=True,
                     caption=meta.get("caption"),
                 )
             else:
@@ -409,7 +415,14 @@ class BaseDownloader(ABC):
 
                 upload_successful = False  # Flag to track if any method succeeded
                 for method in attempt_methods:
-                    current_meta = video_meta.copy()
+                    # Create clean metadata for each upload method
+                    current_meta = {
+                        "height": video_meta.get("height"),
+                        "width": video_meta.get("width"), 
+                        "duration": video_meta.get("duration"),
+                        "thumb": video_meta.get("thumb"),
+                        "caption": video_meta.get("caption")
+                    }
 
                     if method == "photo":
                         current_meta.pop("thumb", None)
@@ -420,8 +433,11 @@ class BaseDownloader(ABC):
                         current_meta.pop("height", None)
                         current_meta.pop("width", None)
                     elif method == "document":
-                        # For document upload, keep basic metadata but add force_document
-                        current_meta["force_document"] = True
+                        # For document upload, only keep caption and thumb
+                        current_meta = {
+                            "caption": video_meta.get("caption"),
+                            "thumb": video_meta.get("thumb")
+                        }
 
                     try:
                         success_obj = await self.send_something(
