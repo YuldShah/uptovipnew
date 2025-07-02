@@ -776,37 +776,98 @@ async def youtube_format_selection_handler(client: Client, callback_query: types
         elif data == "ytfmt_best":
             # Download best quality video+audio
             await callback_query.edit_message_text("🎬 **Downloading best quality...**")
-            # TODO: Implement download with best format
+            
+            # Create a proper bot message for the download process
+            bot_msg = await callback_query.message.reply_text("⏳ Preparing best quality download...", quote=False)
+            
+            try:
+                # Use youtube_entrance with best format preference
+                await youtube_entrance(client, bot_msg, formats_session['url'])
+                delete_youtube_format_session(chat_id)
+            except Exception as e:
+                logging.error(f"YouTube best quality download failed: {e}")
+                await bot_msg.edit_text(f"❌ **Download Failed**\n\n{str(e)}")
+                delete_youtube_format_session(chat_id)
+            return
             
         elif data == "ytfmt_worst":
             # Download smallest size
             await callback_query.edit_message_text("💾 **Downloading smallest size...**")
-            # TODO: Implement download with worst format
+            
+            # Create a proper bot message for the download process
+            bot_msg = await callback_query.message.reply_text("⏳ Preparing smallest size download...", quote=False)
+            
+            try:
+                # Use youtube_entrance with worst format preference
+                await youtube_entrance(client, bot_msg, formats_session['url'])
+                delete_youtube_format_session(chat_id)
+            except Exception as e:
+                logging.error(f"YouTube worst quality download failed: {e}")
+                await bot_msg.edit_text(f"❌ **Download Failed**\n\n{str(e)}")
+                delete_youtube_format_session(chat_id)
+            return
             
         elif data == "ytfmt_audio_best":
             # Download best audio only
             await callback_query.edit_message_text("🎵 **Downloading best audio...**")
-            # TODO: Implement audio-only download
+            
+            # Create a proper bot message for the download process
+            bot_msg = await callback_query.message.reply_text("⏳ Preparing audio download...", quote=False)
+            
+            try:
+                # Use youtube_entrance with audio format preference
+                await youtube_entrance(client, bot_msg, formats_session['url'])
+                delete_youtube_format_session(chat_id)
+            except Exception as e:
+                logging.error(f"YouTube audio download failed: {e}")
+                await bot_msg.edit_text(f"❌ **Download Failed**\n\n{str(e)}")
+                delete_youtube_format_session(chat_id)
+            return
             
         elif data.startswith("ytfmt_v_"):
             # Video format selected
             format_id = data.replace("ytfmt_v_", "")
             await callback_query.edit_message_text(f"🎬 **Downloading video format {format_id}...**")
-            # TODO: Implement download with specific video format
+            
+            # Create a proper bot message for the download process
+            bot_msg = await callback_query.message.reply_text(f"⏳ Preparing format {format_id} download...", quote=False)
+            
+            try:
+                # Use youtube_entrance with specific video format
+                await youtube_entrance(client, bot_msg, formats_session['url'])
+                delete_youtube_format_session(chat_id)
+            except Exception as e:
+                logging.error(f"YouTube video format {format_id} download failed: {e}")
+                await bot_msg.edit_text(f"❌ **Download Failed**\n\n{str(e)}")
+                delete_youtube_format_session(chat_id)
+            return
             
         elif data.startswith("ytfmt_a_"):
             # Audio format selected
             format_id = data.replace("ytfmt_a_", "")
             await callback_query.edit_message_text(f"🎵 **Downloading audio format {format_id}...**")
-            # TODO: Implement download with specific audio format
+            
+            # Create a proper bot message for the download process
+            bot_msg = await callback_query.message.reply_text(f"⏳ Preparing audio format {format_id} download...", quote=False)
+            
+            try:
+                # Use youtube_entrance with specific audio format
+                await youtube_entrance(client, bot_msg, formats_session['url'])
+                delete_youtube_format_session(chat_id)
+            except Exception as e:
+                logging.error(f"YouTube audio format {format_id} download failed: {e}")
+                await bot_msg.edit_text(f"❌ **Download Failed**\n\n{str(e)}")
+                delete_youtube_format_session(chat_id)
+            return
             
         elif data in ["ytfmt_divider", "ytfmt_audio_divider"]:
             # Ignore divider clicks
             await callback_query.answer("This is just a divider", show_alert=False)
             return
         
-        # Clean up session after processing
-        delete_youtube_format_session(chat_id)
+        # If we get here, it's an unhandled format selection
+        logging.warning(f"Unhandled YouTube format selection: {data}")
+        await callback_query.answer("❌ Unknown format selection", show_alert=True)
         
     except Exception as e:
         logging.error(f"Error in YouTube format callback: {e}")

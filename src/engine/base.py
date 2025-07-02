@@ -278,7 +278,7 @@ class BaseDownloader(ABC):
             )
         elif self._format == "audio":
             logging.info("Sending as audio for %s", self._url)
-            success = self.send_something(
+            success = await self.send_something(
                 chat_id=self._chat_id,
                 files=files,
                 _type="audio",
@@ -341,7 +341,7 @@ class BaseDownloader(ABC):
 
         self._redis.add_cache(video_key, mapping)
         # change progress bar to done
-        self._bot_msg.edit_text("✅ Success")
+        await self._bot_msg.edit_text("✅ Success")
         return success
 
     def _get_video_cache(self):
