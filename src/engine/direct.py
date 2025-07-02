@@ -42,14 +42,32 @@ class DirectDownload(BaseDownloader):
         logging.info("Requests download with url %s", self._url)
         response = requests.get(self._url, stream=True)
         response.raise_for_status()
-        file = Path(self._tempdir.name).joinpath(uuid4().hex)
+        
+        # Try to get filename from URL or Content-Disposition header
+        filename = None
+        if 'content-disposition' in response.headers:
+            import re
+            cd = response.headers['content-disposition']
+            filename_match = re.findall('filename=([^;]+)', cd)
+            if filename_match:
+                filename = filename_match[0].strip('"\'')
+        
+        if not filename:
+            filename = os.path.basename(self._url) or uuid4().hex
+            
+        file = Path(self._tempdir.name).joinpath(filename)
+        
         with open(file, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
-        ext = filetype.guess_extension(file)
-        if ext is not None:
-            new_name = file.with_suffix(f".{ext}")
-            file.rename(new_name)
+                
+        # If file doesn't have extension, try to detect and add it
+        if not file.suffix:
+            ext = filetype.guess_extension(file)
+            if ext is not None:
+                new_name = file.with_suffix(f".{ext}")
+                file.rename(new_name)
+                file = new_name
 
         return [file.as_posix()]
 
@@ -107,10 +125,11 @@ class DirectDownload(BaseDownloader):
                     self._process.stderr.read()
                 )
             if self._process.returncode != 0:
+                stderr_output = self._process.stderr.read() if self._process.stderr else "Unknown error"
                 raise subprocess.CalledProcessError(
                     self._process.returncode, 
                     command, 
-                    stderr
+                    stderr_output
                 )
 
             files = [f for f in Path(temp_dir).glob("*") if f.is_file()]
@@ -186,6 +205,47 @@ class DirectDownload(BaseDownloader):
             return self._aria2_download()
         return self._requests_download()
 
-    def _start(self):
-        self._download()
-        self._upload()
+    async def _start(self):
+        downloaded_files = self._download()
+        if downloaded_files:
+            # Auto-detect file type and override format setting for proper handling
+            self._auto_detect_format(downloaded_files[0])
+            await self._upload(files=downloaded_files)
+
+    def _auto_detect_format(self, file_path: str):
+        """Auto-detect file type and set appropriate format for upload"""
+        try:
+            # Get file extension and MIME type
+            file_ext = Path(file_path).suffix.lower()
+            
+            # Try to detect MIME type
+            mime_type = filetype.guess_mime(file_path)
+            
+            # Archive/compressed files should be sent as documents
+            archive_extensions = {'.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.tar.gz', '.tar.bz2', '.tar.xz'}
+            document_extensions = {'.pdf', '.doc', '.docx', '.txt', '.rtf', '.xlsx', '.xls', '.ppt', '.pptx'}
+            
+            if file_ext in archive_extensions or file_ext in document_extensions:
+                logging.info(f"Auto-detected {file_ext} file, setting format to document")
+                self._format = "document"
+            elif mime_type:
+                if mime_type.startswith('video/'):
+                    logging.info(f"Auto-detected video file ({mime_type}), keeping video format")
+                    self._format = "video"
+                elif mime_type.startswith('audio/'):
+                    logging.info(f"Auto-detected audio file ({mime_type}), setting format to audio")
+                    self._format = "audio"
+                elif mime_type.startswith('image/'):
+                    logging.info(f"Auto-detected image file ({mime_type}), setting format to photo")
+                    self._format = "photo"
+                else:
+                    logging.info(f"Auto-detected other file type ({mime_type}), setting format to document")
+                    self._format = "document"
+            else:
+                # If can't detect, default to document for safety
+                logging.info(f"Could not detect file type for {file_ext}, defaulting to document")
+                self._format = "document"
+                
+        except Exception as e:
+            logging.error(f"Error in auto file type detection: {e}, defaulting to document")
+            self._format = "document"
