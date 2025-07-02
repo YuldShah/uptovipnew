@@ -625,7 +625,13 @@ async def handle_add_channel_message(client: Client, message: Message, session: 
         channel_link = None
         
         # Check if forwarded message
-        if message.forward_from_chat:
+        if hasattr(message, 'forward_origin') and hasattr(message.forward_origin, 'chat'):
+            forward_chat = message.forward_origin.chat
+            channel_id = forward_chat.id
+            channel_name = forward_chat.title
+            if hasattr(forward_chat, 'username') and forward_chat.username:
+                channel_link = f"https://t.me/{forward_chat.username}"
+        elif message.forward_from_chat:  # Fallback for older versions
             channel_id = message.forward_from_chat.id
             channel_name = message.forward_from_chat.title
             if message.forward_from_chat.username:
@@ -672,7 +678,7 @@ async def handle_add_channel_message(client: Client, message: Message, session: 
             channel_name = chat.title or channel_name
             
             # Try to get member count to verify bot access
-            await client.get_chat_member_count(channel_id)
+            await client.get_chat_members_count(channel_id)
             
         except Exception as e:
             await message.reply(
