@@ -401,6 +401,9 @@ async def download_handler(client: Client, message: types.Message):
                 # Clean up any existing session to prevent URL corruption
                 delete_youtube_format_session(chat_id)
                 
+                # Also clear any user states that might interfere
+                await clear_user_state(chat_id)
+                
                 formats = extract_youtube_formats(url)
                 if formats and (formats.get('video_formats') or formats.get('audio_formats')):
                     # Create a session for this user and URL
@@ -414,7 +417,8 @@ async def download_handler(client: Client, message: types.Message):
                         "Choose your preferred format and quality:\n"
                         "• 📽️ Video formats include both video and audio\n"
                         "• 🎵 Audio formats are audio-only\n"
-                        "• File sizes are estimates",
+                        "• File sizes are estimates\n\n"
+                        f"**URL:** `{url[:50]}...`",
                         reply_markup=format_keyboard
                     )
                     return
@@ -814,7 +818,26 @@ async def youtube_format_selection_handler(client: Client, callback_query: types
         # Get user's YouTube format session
         formats_session = get_youtube_format_session(chat_id)
         if not formats_session:
-            await callback_query.answer("❌ Session expired. Please send the URL again.", show_alert=True)
+            # Session expired or doesn't exist - clean up any stale UI and inform user
+            await callback_query.edit_message_text(
+                "❌ **Session Expired**\n\n"
+                "Your format selection session has expired.\n"
+                "Please send the YouTube URL again to get fresh format options.",
+                reply_markup=None
+            )
+            await callback_query.answer("Session expired - please send URL again", show_alert=False)
+            return
+        
+        # Validate session has URL
+        if 'url' not in formats_session or not formats_session['url']:
+            logging.warning(f"Invalid session for user {chat_id}: missing URL")
+            delete_youtube_format_session(chat_id)
+            await callback_query.edit_message_text(
+                "❌ **Invalid Session**\n\n"
+                "Session data is corrupted. Please send the YouTube URL again.",
+                reply_markup=None
+            )
+            await callback_query.answer("Invalid session - please send URL again", show_alert=False)
             return
         
         await callback_query.answer("Processing your selection...")

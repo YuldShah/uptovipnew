@@ -418,6 +418,7 @@ def set_user_platform_quality(uid: int, quality: str, platform: str = 'youtube')
 def create_youtube_format_session(uid: int, url: str, formats: dict) -> bool:
     """Create a YouTube format selection session for user"""
     import time
+    import uuid
     with session_manager() as session:
         user = session.query(User).filter(User.user_id == uid).first()
         if not user:
@@ -427,9 +428,13 @@ def create_youtube_format_session(uid: int, url: str, formats: dict) -> bool:
         if not user.config:
             user.config = {}
         
+        # Create a unique session ID for this format selection
+        session_id = uuid.uuid4().hex[:8]
+        
         user.config['youtube_formats'] = formats
         user.config['youtube_url'] = url
         user.config['youtube_session_time'] = time.time()
+        user.config['youtube_session_id'] = session_id
         return True
 
 
@@ -453,7 +458,8 @@ def get_youtube_format_session(uid: int) -> dict:
                 
             return {
                 'formats': user.config['youtube_formats'],
-                'url': user.config['youtube_url']
+                'url': user.config['youtube_url'],
+                'session_id': user.config.get('youtube_session_id', 'unknown')
             }
         return {}
 
@@ -472,6 +478,9 @@ def delete_youtube_format_session(uid: int) -> bool:
                 deleted = True
             if 'youtube_session_time' in user.config:
                 del user.config['youtube_session_time']
+                deleted = True
+            if 'youtube_session_id' in user.config:
+                del user.config['youtube_session_id']
                 deleted = True
             return deleted
         return False
