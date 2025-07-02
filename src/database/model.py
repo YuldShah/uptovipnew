@@ -108,16 +108,37 @@ def get_format_settings(tgid) -> Literal["video", "audio", "document"]:
 
 
 def set_user_settings(tgid: int, key: str, value: str):
-    # set quality or format settings
+    # set quality or format settings with validation
+    
+    # Validate enum values
+    valid_quality = ["high", "medium", "low", "audio", "custom"]
+    valid_format = ["video", "audio", "document"]
+    
+    if key == "quality" and value not in valid_quality:
+        logging.warning(f"Invalid quality value '{value}' for user {tgid}. Ignoring.")
+        return False
+        
+    if key == "format" and value not in valid_format:
+        logging.warning(f"Invalid format value '{value}' for user {tgid}. Ignoring.")
+        return False
+    
     with session_manager() as session:
         # find user first
         user = session.query(User).filter(User.user_id == tgid).first()
-        # upsert
+        if not user:
+            # Create user if doesn't exist
+            user = User(user_id=tgid)
+            session.add(user)
+            session.flush()  # Get the user ID
+            
+        # upsert setting
         setting = session.query(Setting).filter(Setting.user_id == user.id).first()
         if setting:
             setattr(setting, key, value)
         else:
             session.add(Setting(user_id=user.id, **{key: value}))
+    
+    return True
 
 
 def init_user(uid: int):

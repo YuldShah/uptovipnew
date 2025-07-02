@@ -136,7 +136,7 @@ class YoutubeDownload(BaseDownloader):
 
         return files
 
-    def _start(self, formats=None):
+    async def _start(self, formats=None):
         # start download and upload, no cache hit
         # user can choose format by clicking on the button(custom config)
         default_formats = self._setup_formats()
@@ -144,4 +144,4 @@ class YoutubeDownload(BaseDownloader):
             # formats according to user choice
             default_formats = formats + self._setup_formats()
         self._download(default_formats)
-        self._upload()
+        await self._upload()

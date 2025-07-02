@@ -127,7 +127,16 @@ class BaseDownloader(ABC):
 
     @debounce(5)
     def edit_text(self, text: str):
-        self._bot_msg.edit_text(text)
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Schedule coroutine to run in the background
+                asyncio.create_task(self._bot_msg.edit_text(text))
+            else:
+                loop.run_until_complete(self._bot_msg.edit_text(text))
+        except Exception as e:
+            logging.warning(f"Failed to edit message: {e}")
 
     @abstractmethod
     def _setup_formats(self) -> list | None:
@@ -148,12 +157,16 @@ class BaseDownloader(ABC):
             "photo": self._client.send_photo,
         }
 
-    def send_something(self, *, chat_id, files, _type, caption=None, thumb=None, **kwargs):
-        self._client.send_chat_action(chat_id, enums.ChatAction.UPLOAD_DOCUMENT)
+    async def send_something(self, *, chat_id, files, _type, caption=None, thumb=None, **kwargs):
+        try:
+            await self._client.send_chat_action(chat_id, enums.ChatAction.UPLOAD_DOCUMENT)
+        except Exception as e:
+            logging.warning(f"Failed to send chat action: {e}")
+            
         is_cache = kwargs.pop("cache", False)
         if len(files) > 1 and is_cache == False:
             inputs = generate_input_media(files, caption)
-            return self._client.send_media_group(chat_id, inputs)[0]
+            return await self._client.send_media_group(chat_id, inputs)[0]
         else:
             file_arg_name = None
             if _type == "photo":
@@ -182,7 +195,7 @@ class BaseDownloader(ABC):
             if _type in ["video", "animation", "document", "audio"] and thumb is not None:
                 send_args["thumb"] = thumb
 
-            return self._methods[_type](**send_args)
+            return await self._methods[_type](**send_args)
 
     def get_metadata(self):
         video_path = list(Path(self._tempdir.name).glob("*"))[0]
@@ -210,7 +223,7 @@ class BaseDownloader(ABC):
         caption = f"{self._url}\n{filename}\n\nResolution: {width}x{height}\nDuration: {duration} seconds"
         return dict(height=height, width=width, duration=duration, thumb=thumb, caption=caption)
 
-    def _upload(self, files=None, meta=None):
+    async def _upload(self, files=None, meta=None):
         if files is None:
             files = list(Path(self._tempdir.name).glob("*"))
         if meta is None:
@@ -219,7 +232,7 @@ class BaseDownloader(ABC):
         success = SimpleNamespace(document=None, video=None, audio=None, animation=None, photo=None)
         if self._format == "document":
             logging.info("Sending as document for %s", self._url)
-            success = self.send_something(
+            success = await self.send_something(
                 chat_id=self._chat_id,
                 files=files,
                 _type="document",
@@ -229,7 +242,7 @@ class BaseDownloader(ABC):
             )
         elif self._format == "photo":
             logging.info("Sending as photo for %s", self._url)
-            success = self.send_something(
+            success = await self.send_something(
                 chat_id=self._chat_id,
                 files=files,
                 _type="photo",
@@ -262,7 +275,7 @@ class BaseDownloader(ABC):
                     current_meta.pop("width", None)
 
                 try:
-                    success_obj = self.send_something(
+                    success_obj = await self.send_something(
                         chat_id=self._chat_id,
                         files=files,
                         _type=method,

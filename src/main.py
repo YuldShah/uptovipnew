@@ -130,7 +130,7 @@ async def start_handler(client: Client, message: types.Message):
     await client.send_message(
         from_id,
         BotText.start,
-        disable_web_page_preview=True,
+        link_preview_options=types.LinkPreviewOptions(is_disabled=True),
         reply_markup=keyboard
     )
 
@@ -231,7 +231,7 @@ async def help_keyboard_handler(client: Client, message: types.Message):
     chat_id = message.chat.id
     init_user(chat_id)
     await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
-    await client.send_message(chat_id, BotText.help, disable_web_page_preview=True)
+    await client.send_message(chat_id, BotText.help, link_preview_options=types.LinkPreviewOptions(is_disabled=True))
 
 
 @app.on_message(filters.text & filters.regex(r"^🏓 Ping$"))
@@ -695,23 +695,145 @@ async def cancel_format_selection_handler(client: Client, callback_query: types.
     await callback_query.answer("Format selection cancelled")
 
 
-# Legacy callback handlers for compatibility
-@app.on_callback_query(filters.regex(r"document|video|audio"))
+# YouTube Format Selection Handlers
+@app.on_callback_query(filters.regex(r"^ytfmt_"))
+@private_use
+async def youtube_format_callback_handler(client: Client, callback_query: types.CallbackQuery):
+    """Handle YouTube format selection callbacks"""
+    chat_id = callback_query.message.chat.id
+    data = callback_query.data
+    
+    try:
+        # Get user's YouTube format session
+        formats_session = get_youtube_format_session(chat_id)
+        if not formats_session:
+            await callback_query.answer("❌ Session expired. Please send the URL again.", show_alert=True)
+            return
+        
+        await callback_query.answer("Processing your selection...")
+        
+        if data == "ytfmt_cancel":
+            delete_youtube_format_session(chat_id)
+            await callback_query.edit_message_text(
+                "❌ **Format Selection Cancelled**\n\nYou can send another URL to try again."
+            )
+            return
+        
+        elif data == "ytfmt_best":
+            # Download best quality video+audio
+            await callback_query.edit_message_text("🎬 **Downloading best quality...**")
+            # TODO: Implement download with best format
+            
+        elif data == "ytfmt_worst":
+            # Download smallest size
+            await callback_query.edit_message_text("💾 **Downloading smallest size...**")
+            # TODO: Implement download with worst format
+            
+        elif data == "ytfmt_audio_best":
+            # Download best audio only
+            await callback_query.edit_message_text("🎵 **Downloading best audio...**")
+            # TODO: Implement audio-only download
+            
+        elif data.startswith("ytfmt_v_"):
+            # Video format selected
+            format_id = data.replace("ytfmt_v_", "")
+            await callback_query.edit_message_text(f"🎬 **Downloading video format {format_id}...**")
+            # TODO: Implement download with specific video format
+            
+        elif data.startswith("ytfmt_a_"):
+            # Audio format selected
+            format_id = data.replace("ytfmt_a_", "")
+            await callback_query.edit_message_text(f"🎵 **Downloading audio format {format_id}...**")
+            # TODO: Implement download with specific audio format
+            
+        elif data in ["ytfmt_divider", "ytfmt_audio_divider"]:
+            # Ignore divider clicks
+            await callback_query.answer("This is just a divider", show_alert=False)
+            return
+        
+        # Clean up session after processing
+        delete_youtube_format_session(chat_id)
+        
+    except Exception as e:
+        logging.error(f"Error in YouTube format callback: {e}")
+        await callback_query.answer("❌ An error occurred. Please try again.", show_alert=True)
+
+
+# Main menu and navigation handlers
+@app.on_callback_query(filters.regex(r"^(main_menu|settings|help|stats)$"))
+@private_use
+async def main_navigation_handler(client: Client, callback_query: types.CallbackQuery):
+    """Handle main navigation buttons"""
+    chat_id = callback_query.message.chat.id
+    data = callback_query.data
+    
+    try:
+        is_admin_user = await is_admin(client, callback_query.from_user.id)
+        
+        if data == "main_menu":
+            keyboard = create_admin_keyboard() if is_admin_user else create_main_keyboard()
+            await callback_query.edit_message_text(
+                "🏠 **Main Menu**\n\nChoose an option:",
+                reply_markup=keyboard
+            )
+            
+        elif data == "settings":
+            keyboard = create_settings_keyboard()
+            await callback_query.edit_message_text(
+                "⚙️ **Settings**\n\nConfigure your download preferences:",
+                reply_markup=keyboard
+            )
+            
+        elif data == "help":
+            await callback_query.edit_message_text(
+                BotText.help,
+                link_preview_options=types.LinkPreviewOptions(is_disabled=True),
+                reply_markup=create_back_keyboard("main_menu")
+            )
+            
+        elif data == "stats":
+            # Show user statistics
+            await callback_query.edit_message_text(
+                "📊 **Statistics**\n\nThis feature is coming soon!",
+                reply_markup=create_back_keyboard("main_menu")
+            )
+            
+        await callback_query.answer()
+        
+    except Exception as e:
+        logging.error(f"Error in main navigation handler: {e}")
+        await callback_query.answer("❌ An error occurred", show_alert=True)
+
+
+# Legacy callback handlers for compatibility (FIXED)
+@app.on_callback_query(filters.regex(r"^(document|video|audio)$"))
 def legacy_format_callback(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     data = callback_query.data
-    logging.info("Setting %s file type to %s", chat_id, data)
-    callback_query.answer(f"Your send type was set to {callback_query.data}")
-    set_user_settings(chat_id, "format", data)
+    
+    # Only accept valid format enum values
+    if data in ["video", "audio", "document"]:
+        logging.info("Setting %s file type to %s", chat_id, data)
+        callback_query.answer(f"Your send type was set to {data}")
+        set_user_settings(chat_id, "format", data)
+    else:
+        logging.warning(f"Invalid format callback data: {data}")
+        callback_query.answer("Invalid format selection")
 
 
-@app.on_callback_query(filters.regex(r"high|medium|low"))
+@app.on_callback_query(filters.regex(r"^(high|medium|low|audio|custom)$"))
 def legacy_quality_callback(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     data = callback_query.data
-    logging.info("Setting %s download quality to %s", chat_id, data)
-    callback_query.answer(f"Your default engine quality was set to {callback_query.data}")
-    set_user_settings(chat_id, "quality", data)
+    
+    # Only accept valid quality enum values
+    if data in ["high", "medium", "low", "audio", "custom"]:
+        logging.info("Setting %s download quality to %s", chat_id, data)
+        callback_query.answer(f"Your default engine quality was set to {data}")
+        set_user_settings(chat_id, "quality", data)
+    else:
+        logging.warning(f"Invalid quality callback data: {data}")
+        callback_query.answer("Invalid quality selection")
 
 
 if __name__ == "__main__":

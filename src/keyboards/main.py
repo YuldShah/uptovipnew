@@ -28,8 +28,7 @@ def create_admin_keyboard():
         [types.InlineKeyboardButton("📊 User Statistics", callback_data="admin_stats")],
         [types.InlineKeyboardButton("👥 User Management", callback_data="admin_users")],
         [types.InlineKeyboardButton("⚙️ Bot Settings", callback_data="admin_settings")],
-        [types.InlineKeyboardButton("🔄 Restart Bot", callback_data="admin_restart")],
-        [types.InlineKeyboardButton("🔙 Back to Main", callback_data="main_menu")],
+        [types.InlineKeyboardButton(" Back to Main", callback_data="main_menu")],
     ])
     return keyboard
 
