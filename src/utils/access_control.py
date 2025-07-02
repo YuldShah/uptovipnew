@@ -171,29 +171,8 @@ def get_access_denied_message(access_result: dict) -> str:
     reason = access_result.get('reason', 'unknown')
     
     if reason == 'banned':
-        return "❌ **Access Denied**\n\nYou have been banned from using this bot."
+        return "You have been banned from using this bot, please go fuck yourself"
     
-    elif reason == 'no_channel_membership':
-        missing_channels = access_result.get('missing_channels', [])
-        if missing_channels:
-            channel_list = '\n'.join([f"• Channel ID: `{ch_id}`" for ch_id in missing_channels[:5]])
-            return (
-                "🔒 **Access Denied**\n\n"
-                "You need to be a member of at least one of the required channels to use this bot.\n\n"
-                f"**Required Channels:**\n{channel_list}"
-                f"{' and more...' if len(missing_channels) > 5 else ''}\n\n"
-                "Please join any of the required channels and try again."
+    return (
+            "This is private bot, please go fuck yourself"
             )
-        else:
-            return (
-                "🔒 **Access Denied**\n\n"
-                "You need to be a member of at least one required channel to use this bot.\n"
-                "Please contact an administrator for more information."
-            )
-    
-    else:
-        return (
-            "❌ **Access Denied**\n\n"
-            "You don't have permission to use this bot.\n"
-            "Please contact an administrator if you believe this is an error."
-        )

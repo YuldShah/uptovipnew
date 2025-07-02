@@ -8,17 +8,13 @@ from pyrogram import Client, types
 
 class BotText:
 
-    start = """Welcome to YouTube Download bot. Type /help for more information."""
+    start = """Welcome to UpToVip"""
 
     help = """
-1. For YouTube and any websites supported by yt-dlp, just send the link and we will process and send it to you.
-
-2. For specific links use `/spdl {URL}`.
-
-3. If the bot doesn't work, try again later.
+There is no help, help yourself.
     """
 
-    about = "YouTube Download Bot - Private Access"
+    about = "UpToVip - Private Bot"
 
     settings = """
 Please choose the preferred format and video quality for your video. These settings only **apply to YouTube videos**.
