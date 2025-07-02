@@ -441,7 +441,8 @@ def create_youtube_format_session(uid: int, url: str, formats: dict) -> bool:
         session.commit()
         
         import logging
-        logging.info(f"Created YouTube session for user {uid}: URL={url}, session_id={session_id}, time={current_time}")
+        logging.info(f"[SESSION_CREATE] User {uid}: URL={url}, session_id={session_id}, time={current_time}")
+        logging.info(f"[SESSION_CREATE] User {uid}: Stored config now has: {user.config.keys()}")
         return True
 
 
@@ -457,7 +458,9 @@ def get_youtube_format_session(uid: int) -> dict:
             current_time = time.time()
             time_diff = current_time - session_time
             
-            logging.info(f"Session check for user {uid}: session_time={session_time}, current_time={current_time}, diff={time_diff} seconds")
+            logging.info(f"[SESSION_RETRIEVE] User {uid}: session_time={session_time}, current_time={current_time}, diff={time_diff} seconds")
+            logging.info(f"[SESSION_RETRIEVE] User {uid}: Found session_id={user.config.get('youtube_session_id', 'unknown')}")
+            logging.info(f"[SESSION_RETRIEVE] User {uid}: URL in session={user.config['youtube_url']}")
             
             # TEMPORARILY DISABLE EXPIRY CHECK FOR DEBUGGING
             # if time_diff > 1800:  # 30 minutes instead of 10
@@ -487,9 +490,15 @@ def get_youtube_format_session(uid: int) -> dict:
 
 def delete_youtube_format_session(uid: int) -> bool:
     """Delete YouTube format selection session for user"""
+    import logging
     with session_manager() as session:
         user = session.query(User).filter(User.user_id == uid).first()
         if user and user.config:
+            # Log what's being deleted
+            url_being_deleted = user.config.get('youtube_url', 'NO_URL')
+            session_id_being_deleted = user.config.get('youtube_session_id', 'NO_SESSION_ID')
+            logging.info(f"[SESSION_DELETE] User {uid}: Deleting session with URL={url_being_deleted}, session_id={session_id_being_deleted}")
+            
             deleted = False
             if 'youtube_formats' in user.config:
                 del user.config['youtube_formats']
@@ -503,7 +512,13 @@ def delete_youtube_format_session(uid: int) -> bool:
             if 'youtube_session_id' in user.config:
                 del user.config['youtube_session_id']
                 deleted = True
+            
+            if deleted:
+                session.commit()
+                logging.info(f"[SESSION_DELETE] User {uid}: Session deleted and committed")
             return deleted
+        
+        logging.info(f"[SESSION_DELETE] User {uid}: No session found to delete")
         return False
 
 

@@ -817,6 +817,7 @@ async def youtube_format_selection_handler(client: Client, callback_query: types
     try:
         # Get user's YouTube format session
         formats_session = get_youtube_format_session(chat_id)
+        logging.info(f"[CALLBACK] User {chat_id}: Retrieved session data: {formats_session}")
         if not formats_session:
             # Session expired or doesn't exist - clean up any stale UI and inform user
             await callback_query.edit_message_text(
