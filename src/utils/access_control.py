@@ -149,6 +149,12 @@ async def check_full_user_access(client: Client, user_id: int) -> dict:
     }
 
 
+def is_admin(user_id: int) -> bool:
+    """Check if user is an admin"""
+    admins = get_admin_list()
+    return user_id in admins
+
+
 def get_access_denied_message(access_result: dict) -> str:
     """Generate appropriate access denied message"""
     reason = access_result.get('reason', 'unknown')
