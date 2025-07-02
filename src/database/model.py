@@ -19,10 +19,14 @@ from sqlalchemy import (
     Integer,
     String,
     create_engine,
+    func,
+    desc,
+    distinct,
 )
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm.attributes import flag_modified
 
 
 Base = declarative_base()
@@ -419,8 +423,20 @@ def create_youtube_format_session(uid: int, url: str, formats: dict) -> bool:
     """Create a YouTube format selection session for user"""
     import time
     import uuid
+    import logging
+    
     with session_manager() as session:
+        # First, delete any existing session for this user to prevent contamination
         user = session.query(User).filter(User.user_id == uid).first()
+        if user and user.config:
+            # Clear any existing YouTube session data
+            user.config.pop('youtube_formats', None)
+            user.config.pop('youtube_url', None)
+            user.config.pop('youtube_session_time', None)
+            user.config.pop('youtube_session_id', None)
+            session.flush()  # Ensure the deletion is applied
+            logging.info(f"[SESSION_CREATE] User {uid}: Cleared existing session data")
+        
         if not user:
             user = User(user_id=uid, config={})
             session.add(user)
@@ -432,17 +448,31 @@ def create_youtube_format_session(uid: int, url: str, formats: dict) -> bool:
         session_id = uuid.uuid4().hex[:8]
         current_time = time.time()
         
+        # Set new session data
         user.config['youtube_formats'] = formats
         user.config['youtube_url'] = url
         user.config['youtube_session_time'] = current_time
         user.config['youtube_session_id'] = session_id
         
-        # Force commit to ensure data is saved
+        # Mark the user as dirty to force SQLAlchemy to update
+        flag_modified(user, 'config')
+        
+        # Force flush and commit to ensure data is saved immediately
+        session.flush()
         session.commit()
         
-        import logging
+        # Verify the data was actually saved by re-querying
+        session.refresh(user)
+        actual_url = user.config.get('youtube_url', 'NOT_FOUND')
+        actual_session_id = user.config.get('youtube_session_id', 'NOT_FOUND')
+        
         logging.info(f"[SESSION_CREATE] User {uid}: URL={url}, session_id={session_id}, time={current_time}")
-        logging.info(f"[SESSION_CREATE] User {uid}: Stored config now has: {user.config.keys()}")
+        logging.info(f"[SESSION_CREATE] User {uid}: Verification - actual_url={actual_url}, actual_session_id={actual_session_id}")
+        
+        if actual_url != url:
+            logging.error(f"[SESSION_CREATE] User {uid}: CRITICAL - URL mismatch! Expected {url}, got {actual_url}")
+            return False
+            
         return True
 
 
@@ -450,10 +480,13 @@ def get_youtube_format_session(uid: int) -> dict:
     """Get YouTube format selection session for user"""
     import time
     import logging
+    
     with session_manager() as session:
+        # Use a fresh query to ensure we get the latest data
         user = session.query(User).filter(User.user_id == uid).first()
+        
         if user and user.config and 'youtube_formats' in user.config and 'youtube_url' in user.config:
-            # Check if session is stale (older than 10 minutes)
+            # Check if session is stale (older than 30 minutes)
             session_time = user.config.get('youtube_session_time', 0)
             current_time = time.time()
             time_diff = current_time - session_time
@@ -461,9 +494,10 @@ def get_youtube_format_session(uid: int) -> dict:
             logging.info(f"[SESSION_RETRIEVE] User {uid}: session_time={session_time}, current_time={current_time}, diff={time_diff} seconds")
             logging.info(f"[SESSION_RETRIEVE] User {uid}: Found session_id={user.config.get('youtube_session_id', 'unknown')}")
             logging.info(f"[SESSION_RETRIEVE] User {uid}: URL in session={user.config['youtube_url']}")
+            logging.info(f"[SESSION_RETRIEVE] User {uid}: Config keys={list(user.config.keys())}")
             
             # TEMPORARILY DISABLE EXPIRY CHECK FOR DEBUGGING
-            # if time_diff > 1800:  # 30 minutes instead of 10
+            # if time_diff > 1800:  # 30 minutes
             #     logging.info(f"Session expired for user {uid} (age: {time_diff} seconds)")
             #     # Clean up stale session
             #     if 'youtube_formats' in user.config:
@@ -474,17 +508,20 @@ def get_youtube_format_session(uid: int) -> dict:
             #         del user.config['youtube_session_time']
             #     if 'youtube_session_id' in user.config:
             #         del user.config['youtube_session_id']
+            #     flag_modified(user, 'config')
             #     session.commit()
             #     return {}
                 
-            logging.info(f"Session valid for user {uid}, returning session data for URL: {user.config['youtube_url']}")
+            logging.info(f"[SESSION_RETRIEVE] Session valid for user {uid}, returning session data for URL: {user.config['youtube_url']}")
             return {
                 'formats': user.config['youtube_formats'],
                 'url': user.config['youtube_url'],
                 'session_id': user.config.get('youtube_session_id', 'unknown')
             }
         
-        logging.info(f"No session found for user {uid}")
+        logging.info(f"[SESSION_RETRIEVE] No session found for user {uid}")
+        if user and user.config:
+            logging.info(f"[SESSION_RETRIEVE] User {uid} config keys: {list(user.config.keys())}")
         return {}
 
 
@@ -514,6 +551,7 @@ def delete_youtube_format_session(uid: int) -> bool:
                 deleted = True
             
             if deleted:
+                flag_modified(user, 'config')
                 session.commit()
                 logging.info(f"[SESSION_DELETE] User {uid}: Session deleted and committed")
             return deleted
