@@ -417,6 +417,7 @@ def set_user_platform_quality(uid: int, quality: str, platform: str = 'youtube')
 
 def create_youtube_format_session(uid: int, url: str, formats: dict) -> bool:
     """Create a YouTube format selection session for user"""
+    import time
     with session_manager() as session:
         user = session.query(User).filter(User.user_id == uid).first()
         if not user:
@@ -428,14 +429,28 @@ def create_youtube_format_session(uid: int, url: str, formats: dict) -> bool:
         
         user.config['youtube_formats'] = formats
         user.config['youtube_url'] = url
+        user.config['youtube_session_time'] = time.time()
         return True
 
 
 def get_youtube_format_session(uid: int) -> dict:
     """Get YouTube format selection session for user"""
+    import time
     with session_manager() as session:
         user = session.query(User).filter(User.user_id == uid).first()
         if user and user.config and 'youtube_formats' in user.config and 'youtube_url' in user.config:
+            # Check if session is stale (older than 10 minutes)
+            session_time = user.config.get('youtube_session_time', 0)
+            if time.time() - session_time > 600:  # 10 minutes
+                # Clean up stale session
+                if 'youtube_formats' in user.config:
+                    del user.config['youtube_formats']
+                if 'youtube_url' in user.config:
+                    del user.config['youtube_url']
+                if 'youtube_session_time' in user.config:
+                    del user.config['youtube_session_time']
+                return {}
+                
             return {
                 'formats': user.config['youtube_formats'],
                 'url': user.config['youtube_url']
@@ -454,6 +469,9 @@ def delete_youtube_format_session(uid: int) -> bool:
                 deleted = True
             if 'youtube_url' in user.config:
                 del user.config['youtube_url']
+                deleted = True
+            if 'youtube_session_time' in user.config:
+                del user.config['youtube_session_time']
                 deleted = True
             return deleted
         return False

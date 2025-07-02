@@ -398,10 +398,14 @@ async def download_handler(client: Client, message: types.Message):
             
             # Extract available formats
             try:
+                # Clean up any existing session to prevent URL corruption
+                delete_youtube_format_session(chat_id)
+                
                 formats = extract_youtube_formats(url)
                 if formats and (formats.get('video_formats') or formats.get('audio_formats')):
                     # Create a session for this user and URL
                     create_youtube_format_session(chat_id, url, formats)
+                    logging.info(f"Created new format session for user {chat_id} with URL: {url}")
                     
                     # Send format selection keyboard
                     format_keyboard = create_youtube_format_keyboard(formats)
@@ -827,6 +831,8 @@ async def youtube_format_selection_handler(client: Client, callback_query: types
             format_id = data.replace("ytfmt_v_", "")
             await callback_query.edit_message_text(f"🎬 **Downloading video format {format_id}...**")
             
+            logging.info(f"User {chat_id} selected video format {format_id}, session URL: {formats_session['url']}")
+            
             # Create a proper bot message for the download process
             bot_msg = await callback_query.message.reply_text(f"⏳ Preparing format {format_id} download...", quote=False)
             
@@ -846,6 +852,8 @@ async def youtube_format_selection_handler(client: Client, callback_query: types
             # Audio format selected
             format_id = data.replace("ytfmt_a_", "")
             await callback_query.edit_message_text(f"🎵 **Downloading audio format {format_id}...**")
+            
+            logging.info(f"User {chat_id} selected audio format {format_id}, session URL: {formats_session['url']}")
             
             # Create a proper bot message for the download process
             bot_msg = await callback_query.message.reply_text(f"⏳ Preparing audio format {format_id} download...", quote=False)
