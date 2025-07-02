@@ -20,9 +20,20 @@ def get_admin_list() -> List[int]:
         return []
     
     try:
-        return [int(uid.strip()) for uid in ADMIN_IDS.split(",") if uid.strip().isdigit()]
-    except (ValueError, AttributeError):
-        logger.error("Invalid ADMIN_IDS format in environment")
+        # Handle both single ID and comma-separated IDs
+        admin_ids_str = str(ADMIN_IDS).strip()
+        if ',' in admin_ids_str:
+            # Multiple IDs separated by commas
+            return [int(uid.strip()) for uid in admin_ids_str.split(",") if uid.strip().isdigit()]
+        else:
+            # Single ID
+            if admin_ids_str.isdigit():
+                return [int(admin_ids_str)]
+            else:
+                logger.error(f"Invalid ADMIN_IDS format: {admin_ids_str}")
+                return []
+    except (ValueError, AttributeError) as e:
+        logger.error(f"Invalid ADMIN_IDS format in environment: {e}")
         return []
 
 

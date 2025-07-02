@@ -37,7 +37,6 @@ class User(Base):
     config = Column(JSON)
 
     settings = relationship("Setting", back_populates="user", cascade="all, delete-orphan", uselist=False)
-    channels = relationship("Channel", back_populates="user", cascade="all, delete-orphan")
 
 
 class Setting(Base):
@@ -61,8 +60,6 @@ class Channel(Base):
     is_active = Column(Boolean, default=True)
     added_by = Column(BigInteger, nullable=False)  # admin who added it
     created_at = Column(DateTime, default=datetime.utcnow)
-
-    user = relationship("User", back_populates="channels")
 
 
 def create_session():
