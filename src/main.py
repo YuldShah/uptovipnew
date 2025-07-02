@@ -266,7 +266,7 @@ async def ping_keyboard_handler(client: Client, message: types.Message):
 async def direct_download_keyboard_handler(client: Client, message: types.Message):
     chat_id = message.chat.id
     init_user(chat_id)
-    set_user_state(chat_id, "direct_download")
+    await set_user_state(chat_id, "direct_download")
     await client.send_message(
         chat_id,
         "📥 **Direct Download Mode**\n\nSend me a direct link to download the file directly using aria2/requests.\n\n_Send any other message to cancel._",
@@ -279,7 +279,7 @@ async def direct_download_keyboard_handler(client: Client, message: types.Messag
 async def special_download_keyboard_handler(client: Client, message: types.Message):
     chat_id = message.chat.id
     init_user(chat_id)
-    set_user_state(chat_id, "special_download")
+    await set_user_state(chat_id, "special_download")
     await client.send_message(
         chat_id,
         "🔗 **Special Download Mode**\n\nSend me a link for special download processing (Instagram, Pixeldrain, Krakenfiles).\n\n_Send any other message to cancel._",
@@ -308,13 +308,13 @@ async def download_handler(client: Client, message: types.Message):
     logging.info("start %s", url)
 
     # Check user state for special download modes
-    user_state = get_user_state(chat_id)
+    user_state = await get_user_state(chat_id)
     
     try:
         # Validate URL format
         if not re.findall(r"^https?://", url.lower()):
             if user_state:
-                clear_user_state(chat_id)
+                await clear_user_state(chat_id)
                 await message.reply_text("❌ **Mode Cancelled**\n\nInvalid URL format. Please use a valid HTTP/HTTPS URL.", quote=True)
             else:
                 await message.reply_text("❌ **Invalid URL**\n\nPlease send a valid HTTP/HTTPS URL.", quote=True)
@@ -324,7 +324,7 @@ async def download_handler(client: Client, message: types.Message):
         
         # Handle different download modes based on user state
         if user_state == "direct_download":
-            clear_user_state(chat_id)
+            await clear_user_state(chat_id)
             logging.info("Direct download using aria2/requests start %s", url)
             bot_msg = await message.reply_text("📥 Direct download request received.", quote=True)
             try:
@@ -335,7 +335,7 @@ async def download_handler(client: Client, message: types.Message):
             return
             
         elif user_state == "special_download":
-            clear_user_state(chat_id)
+            await clear_user_state(chat_id)
             logging.info("Special download start %s", url)
             bot_msg = await message.reply_text("🔗 Special download request received.", quote=True)
             try:
@@ -396,66 +396,142 @@ async def download_handler(client: Client, message: types.Message):
         youtube_entrance(client, bot_msg, url)
         
     except pyrogram.errors.Flood as e:
-        clear_user_state(chat_id)  # Clear state on flood
+        await clear_user_state(chat_id)  # Clear state on flood
         f = BytesIO()
         f.write(str(e).encode())
         f.write(b"Your job will be done soon. Just wait!")
         f.name = "Please wait.txt"
+        f.seek(0)  # Reset pointer to beginning of file
         await message.reply_document(f, caption=f"Flood wait! Please wait {e} seconds...", quote=True)
         f.close()
         await client.send_message(OWNER, f"Flood wait! 🙁 {e} seconds....")
         await asyncio.sleep(e.value)
     except ValueError as e:
-        clear_user_state(chat_id)  # Clear state on error
+        await clear_user_state(chat_id)  # Clear state on error
         await message.reply_text(e.__str__(), quote=True)
     except Exception as e:
-        clear_user_state(chat_id)  # Clear state on error
+        await clear_user_state(chat_id)  # Clear state on error
         logging.error("Download failed", exc_info=True)
         await message.reply_text(f"❌ Download failed: {e}", quote=True)
 
 
-# Simple state management for user modes
-user_states = {}
+# Thread-safe state management with expiry
+class UserStateManager:
+    """Thread-safe user state manager with automatic expiry"""
+    
+    def __init__(self, expiry_seconds: int = 3600):  # 1 hour default expiry
+        self._states = {}  # {user_id: {'state': state, 'timestamp': timestamp}}
+        self._lock = asyncio.Lock()
+        self._expiry_seconds = expiry_seconds
+    
+    async def set_user_state(self, user_id: int, state: str) -> None:
+        """Set user state with timestamp for expiry tracking"""
+        async with self._lock:
+            self._states[user_id] = {
+                'state': state,
+                'timestamp': time.time()
+            }
+            logging.debug(f"Set state '{state}' for user {user_id}")
+    
+    async def get_user_state(self, user_id: int) -> str | None:
+        """Get user state, automatically removing expired states"""
+        async with self._lock:
+            if user_id not in self._states:
+                return None
+            
+            state_data = self._states[user_id]
+            current_time = time.time()
+            
+            # Check if state has expired
+            if current_time - state_data['timestamp'] > self._expiry_seconds:
+                logging.debug(f"State expired for user {user_id}, removing")
+                del self._states[user_id]
+                return None
+            
+            return state_data['state']
+    
+    async def clear_user_state(self, user_id: int) -> None:
+        """Clear user state"""
+        async with self._lock:
+            if user_id in self._states:
+                logging.debug(f"Cleared state for user {user_id}")
+                del self._states[user_id]
+    
+    async def cleanup_expired_states(self) -> int:
+        """Clean up all expired states, returns number of states removed"""
+        async with self._lock:
+            current_time = time.time()
+            expired_users = []
+            
+            for user_id, state_data in self._states.items():
+                if current_time - state_data['timestamp'] > self._expiry_seconds:
+                    expired_users.append(user_id)
+            
+            for user_id in expired_users:
+                del self._states[user_id]
+            
+            if expired_users:
+                logging.debug(f"Cleaned up {len(expired_users)} expired states")
+            
+            return len(expired_users)
+    
+    async def get_active_states_count(self) -> int:
+        """Get count of active (non-expired) states"""
+        async with self._lock:
+            current_time = time.time()
+            active_count = 0
+            
+            for state_data in self._states.values():
+                if current_time - state_data['timestamp'] <= self._expiry_seconds:
+                    active_count += 1
+            
+            return active_count
 
-def set_user_state(user_id, state):
-    """Set user state for mode tracking"""
-    user_states[user_id] = state
 
-def get_user_state(user_id):
-    """Get user state"""
-    return user_states.get(user_id, None)
+# Global instance of the user state manager
+user_state_manager = UserStateManager(expiry_seconds=1800)  # 30 minutes expiry
 
-def clear_user_state(user_id):
-    """Clear user state"""
-    user_states.pop(user_id, None)
+
+# Legacy wrapper functions for backward compatibility (to be replaced gradually)
+async def set_user_state(user_id, state):
+    """Legacy wrapper - use user_state_manager.set_user_state() directly"""
+    await user_state_manager.set_user_state(user_id, state)
+
+async def get_user_state(user_id):
+    """Legacy wrapper - use user_state_manager.get_user_state() directly"""
+    return await user_state_manager.get_user_state(user_id)
+
+async def clear_user_state(user_id):
+    """Legacy wrapper - use user_state_manager.clear_user_state() directly"""
+    await user_state_manager.clear_user_state(user_id)
 
 
 # Callback query handlers for inline keyboards
 @app.on_callback_query(filters.regex(r"^settings_"))
-def settings_callback_handler(client: Client, callback_query: types.CallbackQuery):
+async def settings_callback_handler(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     data = callback_query.data
     
     if data == "settings_format":
         current_format = get_format_settings(chat_id)
-        callback_query.edit_message_text(
+        await callback_query.edit_message_text(
             f"📁 **Upload Format Settings**\n\nCurrently set to: `{current_format}`\n\nChoose your preferred format:",
             reply_markup=create_format_settings_keyboard()
         )
     elif data == "settings_youtube_quality":
         current_quality = get_quality_settings(chat_id)
-        callback_query.edit_message_text(
+        await callback_query.edit_message_text(
             f"🎬 **YouTube Quality Settings**\n\nCurrently set to: `{current_quality}`\n\nChoose your preferred YouTube quality:",
             reply_markup=create_youtube_quality_keyboard()
         )
     elif data == "settings_platform_quality":
         current_quality = get_user_platform_quality(chat_id)
-        callback_query.edit_message_text(
+        await callback_query.edit_message_text(
             f"🌐 **Platform Quality Settings**\n\nCurrently set to: `{current_quality}`\n\nChoose your preferred quality for non-YouTube platforms:",
             reply_markup=create_platform_quality_keyboard()
         )
     
-    callback_query.answer()
+    await callback_query.answer()
 
 
 @app.on_callback_query(filters.regex(r"^format_"))
@@ -537,15 +613,15 @@ Select an option to change:"""
 
 
 @app.on_callback_query(filters.regex(r"^back_to_"))
-def back_navigation_handler(client: Client, callback_query: types.CallbackQuery):
+async def back_navigation_handler(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     data = callback_query.data
     
     # Clear any user state when going back to main
-    clear_user_state(chat_id)
+    await clear_user_state(chat_id)
     
     if data == "back_to_main":
-        callback_query.edit_message_text(
+        await callback_query.edit_message_text(
             "🏠 **Main Menu**\n\nUse the keyboard below to navigate:",
             reply_markup=None
         )
@@ -562,56 +638,57 @@ def back_navigation_handler(client: Client, callback_query: types.CallbackQuery)
 
 Select an option to change:"""
         
-        callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
+        await callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
     
-    callback_query.answer()
+    await callback_query.answer()
 
 
 @app.on_callback_query(filters.regex(r"^yt_format_"))
-def youtube_format_callback_handler(client: Client, callback_query: types.CallbackQuery):
+async def youtube_format_callback_handler(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     format_id = callback_query.data.replace("yt_format_", "")
     
     # Get the session data
     session = get_youtube_format_session(chat_id)
     if not session:
-        callback_query.answer("❌ Session expired. Please send the URL again.")
+        await callback_query.answer("❌ Session expired. Please send the URL again.")
         return
     
-    logging.info("User %s selected YouTube format %s for URL %s", chat_id, format_id, session.url)
+    logging.info("User %s selected YouTube format %s for URL %s", chat_id, format_id, session['url'])
     
     # Start download with selected format
     try:
-        callback_query.edit_message_text("🔄 **Download Started**\n\nProcessing your request...")
+        # Send a new message for the download process instead of editing the callback message
+        await callback_query.edit_message_text("🔄 **Download Started**\n\nProcessing your request...")
         
-        # Create a pseudo bot message for the download process
-        bot_msg = callback_query.message
+        # Create a proper bot message for the download process
+        bot_msg = await callback_query.message.reply_text("⏳ Preparing download...", quote=False)
         
         # Use the youtube_entrance with specific format
-        youtube_entrance(client, bot_msg, session.url, specific_format=format_id)
+        youtube_entrance(client, bot_msg, session['url'], specific_format=format_id)
         
         # Clean up the session
         delete_youtube_format_session(chat_id)
         
     except Exception as e:
         logging.error("YouTube download failed", exc_info=True)
-        callback_query.edit_message_text(f"❌ **Download Failed**\n\n{str(e)}")
+        await callback_query.edit_message_text(f"❌ **Download Failed**\n\n{str(e)}")
         delete_youtube_format_session(chat_id)
     
-    callback_query.answer()
+    await callback_query.answer()
 
 
 @app.on_callback_query(filters.regex(r"^cancel_format_selection$"))
-def cancel_format_selection_handler(client: Client, callback_query: types.CallbackQuery):
+async def cancel_format_selection_handler(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     
     # Clean up the session
     delete_youtube_format_session(chat_id)
     
-    callback_query.edit_message_text(
+    await callback_query.edit_message_text(
         "❌ **Format Selection Cancelled**\n\nYou can send another URL to try again."
     )
-    callback_query.answer("Format selection cancelled")
+    await callback_query.answer("Format selection cancelled")
 
 
 # Legacy callback handlers for compatibility

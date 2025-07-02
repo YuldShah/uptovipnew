@@ -22,10 +22,6 @@ def match_filter(info_dict):
 
 
 class YoutubeDownload(BaseDownloader):
-    def __init__(self, client, bot_msg, url, specific_format=None):
-        super().__init__(client, bot_msg, url)
-        self._specific_format = specific_format
-
     @staticmethod
     def get_format(m):
         return [
@@ -36,10 +32,6 @@ class YoutubeDownload(BaseDownloader):
     def _setup_formats(self) -> list | None:
         if not is_youtube(self._url):
             return [None]
-
-        # If specific format is provided, use it directly
-        if self._specific_format:
-            return [self._specific_format]
 
         quality, format_ = get_quality_settings(self._chat_id), get_format_settings(self._chat_id)
         # quality: high, medium, low, custom
