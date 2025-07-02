@@ -48,10 +48,6 @@ from utils.access_control import get_admin_list
 from keyboards.main import (
     create_main_keyboard,
     create_admin_keyboard,
-    create_settings_keyboard,
-    create_format_settings_keyboard,
-    create_youtube_quality_keyboard,
-    create_platform_quality_keyboard,
     create_youtube_format_keyboard,
     create_back_keyboard,
 )
@@ -174,35 +170,6 @@ async def start_handler(client: Client, message: types.Message):
 
 
 # Keyboard message handlers
-@app.on_message(filters.text & filters.regex(r"^⚙️ Settings$"))
-@private_use
-async def settings_keyboard_handler(client: Client, message: types.Message):
-    chat_id = message.chat.id
-    init_user(chat_id)
-    
-    # Log user activity
-    log_user_activity(chat_id, 'settings', {'action': 'view_settings'})
-    
-    await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
-    
-    quality = get_quality_settings(chat_id)
-    send_type = get_format_settings(chat_id)
-    platform_quality = get_user_platform_quality(chat_id)
-    
-    settings_text = f"""⚙️ **Current Settings**
-
-📁 **Upload Format:** `{send_type}`
-🎬 **YouTube Quality:** `{quality}`
-🌐 **Platform Quality:** `{platform_quality}`
-
-Select an option to change:"""
-    
-    await client.send_message(
-        chat_id, 
-        settings_text, 
-        reply_markup=create_settings_keyboard()
-    )
-
 
 @app.on_message(filters.text & filters.regex(r"^📊 Stats$"))
 @private_use
@@ -263,13 +230,6 @@ async def about_keyboard_handler(client: Client, message: types.Message):
     await client.send_message(chat_id, BotText.about)
 
 
-@app.on_message(filters.text & filters.regex(r"^❓ Help$"))
-@private_use
-async def help_keyboard_handler(client: Client, message: types.Message):
-    chat_id = message.chat.id
-    init_user(chat_id)
-    await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
-    await client.send_message(chat_id, BotText.help, link_preview_options=types.LinkPreviewOptions(is_disabled=True))
 
 
 @app.on_message(filters.text & filters.regex(r"^🏓 Ping$"))
@@ -348,7 +308,7 @@ async def download_handler(client: Client, message: types.Message):
     from handlers.admin import admin_sessions
     
     if await is_admin(client, chat_id) and chat_id in admin_sessions:
-        logging.info(f"Admin {chat_id} has active session, processing as admin input")
+        logging.info(f"Admin {chat_id} has active session: {admin_sessions[chat_id]}, skipping URL processing")
         # Don't process as download URL, let admin handlers deal with it
         return
 
@@ -622,116 +582,6 @@ async def clear_user_state(user_id):
     await user_state_manager.clear_user_state(user_id)
 
 
-# Callback query handlers for inline keyboards
-@app.on_callback_query(filters.regex(r"^settings_"))
-@private_use_callback
-async def settings_callback_handler(client: Client, callback_query: types.CallbackQuery):
-    chat_id = callback_query.message.chat.id
-    data = callback_query.data
-    
-    if data == "settings_format":
-        current_format = get_format_settings(chat_id)
-        await callback_query.edit_message_text(
-            f"📁 **Upload Format Settings**\n\nCurrently set to: `{current_format}`\n\nChoose your preferred format:",
-            reply_markup=create_format_settings_keyboard()
-        )
-    elif data == "settings_youtube_quality":
-        current_quality = get_quality_settings(chat_id)
-        await callback_query.edit_message_text(
-            f"🎬 **YouTube Quality Settings**\n\nCurrently set to: `{current_quality}`\n\nChoose your preferred YouTube quality:",
-            reply_markup=create_youtube_quality_keyboard()
-        )
-    elif data == "settings_platform_quality":
-        current_quality = get_user_platform_quality(chat_id)
-        await callback_query.edit_message_text(
-            f"🌐 **Platform Quality Settings**\n\nCurrently set to: `{current_quality}`\n\nChoose your preferred quality for non-YouTube platforms:",
-            reply_markup=create_platform_quality_keyboard()
-        )
-    
-    await callback_query.answer()
-
-
-@app.on_callback_query(filters.regex(r"^format_"))
-@private_use_callback
-async def format_callback_handler(client: Client, callback_query: types.CallbackQuery):
-    chat_id = callback_query.message.chat.id
-    data = callback_query.data.replace("format_", "")
-    
-    logging.info("Setting %s file format to %s", chat_id, data)
-    set_user_settings(chat_id, "format", data)
-    
-    await callback_query.answer(f"✅ Upload format set to {data}")
-    
-    # Go back to settings
-    quality = get_quality_settings(chat_id)
-    send_type = get_format_settings(chat_id)
-    platform_quality = get_user_platform_quality(chat_id)
-    
-    settings_text = f"""⚙️ **Current Settings**
-
-📁 **Upload Format:** `{send_type}`
-🎬 **YouTube Quality:** `{quality}`
-🌐 **Platform Quality:** `{platform_quality}`
-
-Select an option to change:"""
-    
-    await callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
-
-
-@app.on_callback_query(filters.regex(r"^youtube_quality_"))
-@private_use_callback
-async def youtube_quality_callback_handler(client: Client, callback_query: types.CallbackQuery):
-    chat_id = callback_query.message.chat.id
-    data = callback_query.data.replace("youtube_quality_", "")
-    
-    logging.info("Setting %s YouTube quality to %s", chat_id, data)
-    set_user_settings(chat_id, "quality", data)
-    
-    await callback_query.answer(f"✅ YouTube quality set to {data}")
-    
-    # Go back to settings
-    quality = get_quality_settings(chat_id)
-    send_type = get_format_settings(chat_id)
-    platform_quality = get_user_platform_quality(chat_id)
-    
-    settings_text = f"""⚙️ **Current Settings**
-
-📁 **Upload Format:** `{send_type}`
-🎬 **YouTube Quality:** `{quality}`
-🌐 **Platform Quality:** `{platform_quality}`
-
-Select an option to change:"""
-    
-    await callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
-
-
-@app.on_callback_query(filters.regex(r"^platform_quality_"))
-@private_use_callback
-async def platform_quality_callback_handler(client: Client, callback_query: types.CallbackQuery):
-    chat_id = callback_query.message.chat.id
-    data = callback_query.data.replace("platform_quality_", "")
-    
-    logging.info("Setting %s platform quality to %s", chat_id, data)
-    set_user_platform_quality(chat_id, data)
-    
-    await callback_query.answer(f"✅ Platform quality set to {data}")
-    
-    # Go back to settings
-    quality = get_quality_settings(chat_id)
-    send_type = get_format_settings(chat_id)
-    platform_quality = get_user_platform_quality(chat_id)
-    
-    settings_text = f"""⚙️ **Current Settings**
-
-📁 **Upload Format:** `{send_type}`
-🎬 **YouTube Quality:** `{quality}`
-🌐 **Platform Quality:** `{platform_quality}`
-
-Select an option to change:"""
-    
-    await callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
-
-
 @app.on_callback_query(filters.regex(r"^back_to_"))
 @private_use_callback
 async def back_navigation_handler(client: Client, callback_query: types.CallbackQuery):
@@ -742,24 +592,13 @@ async def back_navigation_handler(client: Client, callback_query: types.Callback
     await clear_user_state(chat_id)
     
     if data == "back_to_main":
+        # Show main menu
+        admin_status = await is_admin(client, callback_query.from_user.id)
+        keyboard = create_admin_keyboard() if admin_status else create_main_keyboard()
         await callback_query.edit_message_text(
-            "🏠 **Main Menu**\n\nUse the keyboard below to navigate:",
-            reply_markup=None
+            "🏠 **Main Menu**\n\nChoose an option:",
+            reply_markup=keyboard
         )
-    elif data == "back_to_settings":
-        quality = get_quality_settings(chat_id)
-        send_type = get_format_settings(chat_id)
-        platform_quality = get_user_platform_quality(chat_id)
-        
-        settings_text = f"""⚙️ **Current Settings**
-
-📁 **Upload Format:** `{send_type}`
-🎬 **YouTube Quality:** `{quality}`
-🌐 **Platform Quality:** `{platform_quality}`
-
-Select an option to change:"""
-        
-        await callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
     
     await callback_query.answer()
 
@@ -916,7 +755,7 @@ async def youtube_format_selection_handler(client: Client, callback_query: types
 
 
 # Main menu and navigation handlers
-@app.on_callback_query(filters.regex(r"^(main_menu|settings|help|stats)$"))
+@app.on_callback_query(filters.regex(r"^(main_menu|stats)$"))
 @private_use_callback
 async def main_navigation_handler(client: Client, callback_query: types.CallbackQuery):
     """Handle main navigation buttons"""
@@ -931,20 +770,6 @@ async def main_navigation_handler(client: Client, callback_query: types.Callback
             await callback_query.edit_message_text(
                 "🏠 **Main Menu**\n\nChoose an option:",
                 reply_markup=keyboard
-            )
-            
-        elif data == "settings":
-            keyboard = create_settings_keyboard()
-            await callback_query.edit_message_text(
-                "⚙️ **Settings**\n\nConfigure your download preferences:",
-                reply_markup=keyboard
-            )
-            
-        elif data == "help":
-            await callback_query.edit_message_text(
-                BotText.help,
-                link_preview_options=types.LinkPreviewOptions(is_disabled=True),
-                reply_markup=create_back_keyboard("main_menu")
             )
             
         elif data == "stats":

@@ -29,6 +29,50 @@ def create_admin_keyboard():
     return keyboard
 
 
+def create_settings_keyboard():
+    """Create the settings keyboard layout."""
+    keyboard = types.InlineKeyboardMarkup([
+        [types.InlineKeyboardButton("📁 Upload Format", callback_data="settings_format")],
+        [types.InlineKeyboardButton("� YouTube Quality", callback_data="settings_youtube_quality")],
+        [types.InlineKeyboardButton("� Platform Quality", callback_data="settings_platform_quality")],
+        [types.InlineKeyboardButton("🔙 Back", callback_data="back_to_main")],
+    ])
+    return keyboard
+
+
+def create_format_settings_keyboard():
+    """Create the format settings keyboard layout."""
+    keyboard = types.InlineKeyboardMarkup([
+        [types.InlineKeyboardButton("📹 Video", callback_data="format_video")],
+        [types.InlineKeyboardButton("🎵 Audio", callback_data="format_audio")],
+        [types.InlineKeyboardButton("📄 Document", callback_data="format_document")],
+        [types.InlineKeyboardButton("🔙 Back", callback_data="settings")],
+    ])
+    return keyboard
+
+
+def create_youtube_quality_keyboard():
+    """Create the YouTube quality settings keyboard."""
+    keyboard = types.InlineKeyboardMarkup([
+        [types.InlineKeyboardButton("🔥 High (1080p+)", callback_data="youtube_quality_high")],
+        [types.InlineKeyboardButton("⚡ Medium (720p)", callback_data="youtube_quality_medium")],
+        [types.InlineKeyboardButton("💾 Low (480p)", callback_data="youtube_quality_low")],
+        [types.InlineKeyboardButton("🔙 Back", callback_data="quality_settings")],
+    ])
+    return keyboard
+
+
+def create_platform_quality_keyboard():
+    """Create the platform quality settings keyboard."""
+    keyboard = types.InlineKeyboardMarkup([
+        [types.InlineKeyboardButton("🎬 YouTube", callback_data="platform_youtube")],
+        [types.InlineKeyboardButton("📱 Instagram", callback_data="platform_instagram")],
+        [types.InlineKeyboardButton("🎵 Twitter", callback_data="platform_twitter")],
+        [types.InlineKeyboardButton("🔙 Back", callback_data="settings")],
+    ])
+    return keyboard
+
+
 def create_youtube_format_keyboard(formats_dict: dict):
     """
     Create a keyboard for YouTube format selection.

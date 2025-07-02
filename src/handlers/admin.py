@@ -124,6 +124,11 @@ async def admin_callback_handler(client: Client, callback_query: CallbackQuery):
     data = callback_query.data
     user_id = callback_query.from_user.id
     
+    # Clear any existing admin session when navigating to main menus
+    if data in ["access_menu", "manage_channels", "manual_access"] and user_id in admin_sessions:
+        del admin_sessions[user_id]
+        logger.info(f"Cleared admin session for user {user_id} on navigation to {data}")
+    
     if data == "access_menu":
         await callback_query.edit_message_text(
             "🔧 **Admin Panel**\n\n"
@@ -515,7 +520,29 @@ async def admin_callback_handler(client: Client, callback_query: CallbackQuery):
         )
 
     elif data == "close_admin":
+        # Clear admin session and delete message
+        if user_id in admin_sessions:
+            del admin_sessions[user_id]
+            logger.info(f"Cleared admin session for user {user_id} on close")
         await callback_query.message.delete()
+    
+    elif data == "main_menu":
+        # Clear admin session and return to main menu
+        if user_id in admin_sessions:
+            del admin_sessions[user_id]
+            logger.info(f"Cleared admin session for user {user_id} on main menu navigation")
+        
+        # Import keyboard functions here to avoid circular import
+        from keyboards.main import create_admin_keyboard, create_main_keyboard
+        from utils.access_control import is_admin
+        
+        is_admin_user = await is_admin(client, user_id)
+        keyboard = create_admin_keyboard() if is_admin_user else create_main_keyboard()
+        
+        await callback_query.edit_message_text(
+            "🏠 **Main Menu**\n\nChoose an option:",
+            reply_markup=keyboard
+        )
 
 
 async def handle_admin_message(client: Client, message: Message):
@@ -893,5 +920,5 @@ def get_channel_url(channel: Dict) -> str:
 def register_admin_handlers(app):
     """Register all admin handlers"""
     app.on_message(filters.command("admin") & filters.private)(admin_command)
-    app.on_callback_query(filters.regex(r"^(access_menu|manage_channels|manual_access|add_channel|remove_channel_|remove_all_channels|confirm_|whitelist_user|ban_user|check_user|access_stats|top_users|user_search|search_|execute_|user_details_|reset_user_|close_admin).*"))(admin_callback_handler)
+    app.on_callback_query(filters.regex(r"^(access_menu|manage_channels|manual_access|add_channel|remove_channel_|remove_all_channels|confirm_|whitelist_user|ban_user|check_user|access_stats|top_users|user_search|search_|execute_|user_details_|reset_user_|close_admin|main_menu).*"))(admin_callback_handler)
     app.on_message(filters.private & admin_session)(handle_admin_message)
