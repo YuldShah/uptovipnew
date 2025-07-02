@@ -129,10 +129,18 @@ class YoutubeDownload(BaseDownloader):
         for f in formats:
             ydl_opts["format"] = f
             logging.info("yt-dlp options: %s", ydl_opts)
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([self._url])
-            files = list(Path(self._tempdir.name).glob("*"))
-            break
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([self._url])
+                files = list(Path(self._tempdir.name).glob("*"))
+                if files:  # Successfully downloaded files
+                    break
+                else:
+                    logging.warning(f"No files downloaded with format {f}")
+            except Exception as e:
+                logging.error(f"Download failed with format {f}: {e}")
+                # Continue to next format
+                continue
 
         return files
 
@@ -143,5 +151,58 @@ class YoutubeDownload(BaseDownloader):
         if formats is not None:
             # formats according to user choice
             default_formats = formats + self._setup_formats()
-        self._download(default_formats)
-        await self._upload()
+        
+        try:
+            files = self._download(default_formats)
+            
+            # Check if download was successful
+            if not files:
+                await self._bot_msg.edit_text(
+                    "❌ **Download Failed**\n\n"
+                    "No files were downloaded. This could be due to:\n"
+                    "• **Authentication required** (login/cookies needed)\n"
+                    "• **Content not available** or private\n"
+                    "• **Rate limiting** from the platform\n"
+                    "• **Network issues**\n\n"
+                    "For Instagram, try:\n"
+                    "• Using a public post URL\n"
+                    "• Adding cookies for authentication\n"
+                    "• Trying again later if rate-limited"
+                )
+                return
+            
+            await self._upload()
+            
+        except Exception as e:
+            logging.error(f"Download failed for {self._url}: {e}")
+            error_msg = str(e)
+            
+            # Provide specific error messages for common issues
+            if "login required" in error_msg.lower() or "authentication" in error_msg.lower():
+                await self._bot_msg.edit_text(
+                    "🔐 **Authentication Required**\n\n"
+                    "This content requires login to access.\n\n"
+                    "**For Instagram:**\n"
+                    "• Make sure the post is public\n"
+                    "• Try a different URL format\n"
+                    "• Contact admin if cookies need to be configured"
+                )
+            elif "rate" in error_msg.lower() and "limit" in error_msg.lower():
+                await self._bot_msg.edit_text(
+                    "⏱️ **Rate Limited**\n\n"
+                    "Too many requests to the platform.\n\n"
+                    "Please try again in a few minutes."
+                )
+            elif "not available" in error_msg.lower() or "private" in error_msg.lower():
+                await self._bot_msg.edit_text(
+                    "🚫 **Content Not Available**\n\n"
+                    "The requested content is:\n"
+                    "• Private or restricted\n"
+                    "• Deleted or moved\n"
+                    "• Not accessible from this region\n\n"
+                    "Please check the URL and try again."
+                )
+            else:
+                await self._bot_msg.edit_text(f"❌ **Download Error**\n\n{error_msg}")
+            
+            raise  # Re-raise for logging purposes

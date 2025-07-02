@@ -384,11 +384,53 @@ async def download_handler(client: Client, message: types.Message):
             platform = "other"
             if "instagram" in url.lower():
                 platform = "instagram"
+                # Route Instagram URLs to special download handler
+                download_id = log_download_attempt(chat_id, url, platform)
+                log_user_activity(chat_id, 'download', {'platform': platform, 'url': url, 'download_id': download_id})
+                
+                bot_msg = await message.reply_text("📱 Instagram download request received.", quote=True)
+                try:
+                    await special_download_entrance(client, bot_msg, url)
+                    return
+                except Exception as e:
+                    logging.error(f"Instagram download failed: {e}")
+                    await message.reply_text(f"❌ Instagram download failed: {e}", quote=True)
+                    await bot_msg.delete()
+                    return
+                    
             elif "pixeldrain" in url.lower():
                 platform = "pixeldrain"
+                # Route to special download handler
+                download_id = log_download_attempt(chat_id, url, platform)
+                log_user_activity(chat_id, 'download', {'platform': platform, 'url': url, 'download_id': download_id})
+                
+                bot_msg = await message.reply_text("☁️ Pixeldrain download request received.", quote=True)
+                try:
+                    await special_download_entrance(client, bot_msg, url)
+                    return
+                except Exception as e:
+                    logging.error(f"Pixeldrain download failed: {e}")
+                    await message.reply_text(f"❌ Pixeldrain download failed: {e}", quote=True)
+                    await bot_msg.delete()
+                    return
+                    
             elif "krakenfiles" in url.lower():
                 platform = "krakenfiles"
+                # Route to special download handler
+                download_id = log_download_attempt(chat_id, url, platform)
+                log_user_activity(chat_id, 'download', {'platform': platform, 'url': url, 'download_id': download_id})
+                
+                bot_msg = await message.reply_text("🗂️ Krakenfiles download request received.", quote=True)
+                try:
+                    await special_download_entrance(client, bot_msg, url)
+                    return
+                except Exception as e:
+                    logging.error(f"Krakenfiles download failed: {e}")
+                    await message.reply_text(f"❌ Krakenfiles download failed: {e}", quote=True)
+                    await bot_msg.delete()
+                    return
             
+            # For other platforms, log as generic
             download_id = log_download_attempt(chat_id, url, platform)
             log_user_activity(chat_id, 'download', {'platform': platform, 'url': url, 'download_id': download_id})
         

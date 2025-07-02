@@ -198,7 +198,12 @@ class BaseDownloader(ABC):
             return await self._methods[_type](**send_args)
 
     def get_metadata(self):
-        video_path = list(Path(self._tempdir.name).glob("*"))[0]
+        files = list(Path(self._tempdir.name).glob("*"))
+        if not files:
+            logging.error("No files found in download directory")
+            raise FileNotFoundError("Download failed - no files were downloaded")
+        
+        video_path = files[0]
         filename = Path(video_path).name
         width = height = duration = 0
         try:
@@ -226,8 +231,31 @@ class BaseDownloader(ABC):
     async def _upload(self, files=None, meta=None):
         if files is None:
             files = list(Path(self._tempdir.name).glob("*"))
+            if not files:
+                logging.error("Upload failed - no files to upload")
+                await self._bot_msg.edit_text(
+                    "❌ **Download Failed**\n\n"
+                    "No files were downloaded successfully.\n\n"
+                    "**Possible reasons:**\n"
+                    "• Content requires login/authentication\n"
+                    "• Content is private or restricted\n"
+                    "• Rate limiting from the platform\n"
+                    "• Network connectivity issues\n\n"
+                    "**For Instagram:** Try using a direct link or check if the content is public."
+                )
+                return
+                
         if meta is None:
-            meta = self.get_metadata()
+            try:
+                meta = self.get_metadata()
+            except FileNotFoundError as e:
+                logging.error(f"Upload failed - metadata error: {e}")
+                await self._bot_msg.edit_text(f"❌ **Processing Error**\n\n{str(e)}")
+                return
+            except Exception as e:
+                logging.error(f"Error getting metadata: {e}")
+                await self._bot_msg.edit_text(f"❌ **Processing Error**\n\nFailed to process downloaded file: {e}")
+                return
 
         success = SimpleNamespace(document=None, video=None, audio=None, animation=None, photo=None)
         if self._format == "document":
