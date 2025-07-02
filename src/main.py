@@ -401,33 +401,27 @@ async def download_handler(client: Client, message: types.Message):
                 # Clean up any existing session to prevent URL corruption
                 delete_youtube_format_session(chat_id)
                 
-                # Skip format selection for now - just download with default settings
-                # This avoids the session expired issue when users send direct URLs
-                logging.info("Downloading YouTube URL with default settings: %s", url)
-                await processing_msg.edit_text("🎬 **Processing YouTube download...**\n\n⏳ Starting download with default settings...")
-                
-                # Fallback to regular download - this will work immediately
-                # await youtube_entrance(client, processing_msg, url)
-                # return
-                
-                # TODO: Re-enable format selection later with better session management
-                # formats = extract_youtube_formats(url)
-                # if formats and (formats.get('video_formats') or formats.get('audio_formats')):
-                #     # Create a session for this user and URL
-                #     create_youtube_format_session(chat_id, url, formats)
-                #     logging.info(f"Created new format session for user {chat_id} with URL: {url}")
-                #     
-                #     # Send format selection keyboard
-                #     format_keyboard = create_youtube_format_keyboard(formats)
-                #     await processing_msg.edit_text(
-                #         "🎬 **YouTube Format Selection**\n\n"
-                #         "Choose your preferred format and quality:\n"
-                #         "• 📽️ Video formats include both video and audio\n"
-                #         "• 🎵 Audio formats are audio-only\n"
-                #         "• File sizes are estimates",
-                #         reply_markup=format_keyboard
-                #     )
-                #     return
+                formats = extract_youtube_formats(url)
+                if formats and (formats.get('video_formats') or formats.get('audio_formats')):
+                    # Create a session for this user and URL
+                    create_youtube_format_session(chat_id, url, formats)
+                    logging.info(f"Created new format session for user {chat_id} with URL: {url}")
+                    
+                    # Send format selection keyboard
+                    format_keyboard = create_youtube_format_keyboard(formats)
+                    await processing_msg.edit_text(
+                        "🎬 **YouTube Format Selection**\n\n"
+                        "Choose your preferred format and quality:\n"
+                        "• 📽️ Video formats include both video and audio\n"
+                        "• 🎵 Audio formats are audio-only\n"
+                        "• File sizes are estimates",
+                        reply_markup=format_keyboard
+                    )
+                    return
+                else:
+                    # Fallback to regular download if format extraction fails
+                    logging.warning("Could not extract YouTube formats, falling back to regular download")
+                    await processing_msg.edit_text("🎬 **Processing YouTube download...**\n\n⏳ Starting download with default settings...")
             except Exception as e:
                 logging.error(f"Error extracting YouTube formats: {e}")
                 # Fallback to regular download
@@ -808,91 +802,84 @@ async def cancel_format_selection_handler(client: Client, callback_query: types.
     await callback_query.answer("Format selection cancelled")
 
 
-# YouTube Format Selection Handlers - TEMPORARILY DISABLED
-# @app.on_callback_query(filters.regex(r"^ytfmt_"))
-# @private_use_callback
-async def youtube_format_selection_handler_disabled(client: Client, callback_query: types.CallbackQuery):
-    """Handle YouTube format selection callbacks - DISABLED"""
-    # Send a message that format selection is temporarily disabled
-    await callback_query.answer("Format selection is temporarily disabled. The video will download with default settings.", show_alert=True)
-    return
-
-# DISABLED CALLBACK HANDLER CONTENT - START
-# """Handle YouTube format selection callbacks"""
-# chat_id = callback_query.message.chat.id
-# data = callback_query.data
-# 
-# try:
-#     # Get user's YouTube format session
-#     formats_session = get_youtube_format_session(chat_id)
-#     if not formats_session:
-#         await callback_query.answer("❌ Session expired. Please send the URL again.", show_alert=True)
-#         return
-#     
-#     await callback_query.answer("Processing your selection...")
-#     
-#     if data == "ytfmt_cancel":
-#         delete_youtube_format_session(chat_id)
-#         await callback_query.edit_message_text(
-#             "❌ **Format Selection Cancelled**\n\nYou can send another URL to try again."
-#         )
-#         return
-#         
-#     elif data.startswith("ytfmt_v_"):
-#         # Video format selected
-#         format_id = data.replace("ytfmt_v_", "")
-#         await callback_query.edit_message_text(f"🎬 **Downloading video format {format_id}...**")
-#         
-#         logging.info(f"User {chat_id} selected video format {format_id}, session URL: {formats_session['url']}")
-#         
-#         # Create a proper bot message for the download process
-#         bot_msg = await callback_query.message.reply_text(f"⏳ Preparing format {format_id} download...", quote=False)
-#         
-#         try:
-#             # Build proper format string for video - try to get video+audio if possible
-#             # If it's a video-only format, combine it with best audio
-#             format_string = f"{format_id}+bestaudio/bestvideo[format_id={format_id}]+bestaudio/{format_id}"
-#             await youtube_entrance(client, bot_msg, formats_session['url'], format_string)
-#             delete_youtube_format_session(chat_id)
-#         except Exception as e:
-#             logging.error(f"YouTube video format {format_id} download failed: {e}")
-#             await bot_msg.edit_text(f"❌ **Download Failed**\n\n{str(e)}")
-#             delete_youtube_format_session(chat_id)
-#         return
-#         
-#     elif data.startswith("ytfmt_a_"):
-#         # Audio format selected
-#         format_id = data.replace("ytfmt_a_", "")
-#         await callback_query.edit_message_text(f"🎵 **Downloading audio format {format_id}...**")
-#         
-#         logging.info(f"User {chat_id} selected audio format {format_id}, session URL: {formats_session['url']}")
-#         
-#         # Create a proper bot message for the download process
-#         bot_msg = await callback_query.message.reply_text(f"⏳ Preparing audio format {format_id} download...", quote=False)
-#         
-#         try:
-#             # For audio, just use the format ID directly since it's audio-only
-#             await youtube_entrance(client, bot_msg, formats_session['url'], format_id)
-#             delete_youtube_format_session(chat_id)
-#         except Exception as e:
-#             logging.error(f"YouTube audio format {format_id} download failed: {e}")
-#             await bot_msg.edit_text(f"❌ **Download Failed**\n\n{str(e)}")
-#             delete_youtube_format_session(chat_id)
-#         return
-#         
-#     elif data in ["ytfmt_divider", "ytfmt_audio_divider"]:
-#         # Ignore divider clicks
-#         await callback_query.answer("This is just a divider", show_alert=False)
-#         return
-#     
-#     # If we get here, it's an unhandled format selection
-#     logging.warning(f"Unhandled YouTube format selection: {data}")
-#     await callback_query.answer("❌ Unknown format selection", show_alert=True)
-#     
-# except Exception as e:
-#     logging.error(f"Error in YouTube format callback: {e}")
-#     await callback_query.answer("❌ An error occurred. Please try again.", show_alert=True)
-# DISABLED CALLBACK HANDLER CONTENT - END
+# YouTube Format Selection Handlers
+@app.on_callback_query(filters.regex(r"^ytfmt_"))
+@private_use_callback
+async def youtube_format_selection_handler(client: Client, callback_query: types.CallbackQuery):
+    """Handle YouTube format selection callbacks"""
+    chat_id = callback_query.message.chat.id
+    data = callback_query.data
+    
+    try:
+        # Get user's YouTube format session
+        formats_session = get_youtube_format_session(chat_id)
+        if not formats_session:
+            await callback_query.answer("❌ Session expired. Please send the URL again.", show_alert=True)
+            return
+        
+        await callback_query.answer("Processing your selection...")
+        
+        if data == "ytfmt_cancel":
+            delete_youtube_format_session(chat_id)
+            await callback_query.edit_message_text(
+                "❌ **Format Selection Cancelled**\n\nYou can send another URL to try again."
+            )
+            return
+            
+        elif data.startswith("ytfmt_v_"):
+            # Video format selected
+            format_id = data.replace("ytfmt_v_", "")
+            await callback_query.edit_message_text(f"🎬 **Downloading video format {format_id}...**")
+            
+            logging.info(f"User {chat_id} selected video format {format_id}, session URL: {formats_session['url']}")
+            
+            # Create a proper bot message for the download process
+            bot_msg = await callback_query.message.reply_text(f"⏳ Preparing format {format_id} download...", quote=False)
+            
+            try:
+                # Build proper format string for video - try to get video+audio if possible
+                # If it's a video-only format, combine it with best audio
+                format_string = f"{format_id}+bestaudio/bestvideo[format_id={format_id}]+bestaudio/{format_id}"
+                await youtube_entrance(client, bot_msg, formats_session['url'], format_string)
+                delete_youtube_format_session(chat_id)
+            except Exception as e:
+                logging.error(f"YouTube video format {format_id} download failed: {e}")
+                await bot_msg.edit_text(f"❌ **Download Failed**\n\n{str(e)}")
+                delete_youtube_format_session(chat_id)
+            return
+            
+        elif data.startswith("ytfmt_a_"):
+            # Audio format selected
+            format_id = data.replace("ytfmt_a_", "")
+            await callback_query.edit_message_text(f"🎵 **Downloading audio format {format_id}...**")
+            
+            logging.info(f"User {chat_id} selected audio format {format_id}, session URL: {formats_session['url']}")
+            
+            # Create a proper bot message for the download process
+            bot_msg = await callback_query.message.reply_text(f"⏳ Preparing audio format {format_id} download...", quote=False)
+            
+            try:
+                # For audio, just use the format ID directly since it's audio-only
+                await youtube_entrance(client, bot_msg, formats_session['url'], format_id)
+                delete_youtube_format_session(chat_id)
+            except Exception as e:
+                logging.error(f"YouTube audio format {format_id} download failed: {e}")
+                await bot_msg.edit_text(f"❌ **Download Failed**\n\n{str(e)}")
+                delete_youtube_format_session(chat_id)
+            return
+            
+        elif data in ["ytfmt_divider", "ytfmt_audio_divider"]:
+            # Ignore divider clicks
+            await callback_query.answer("This is just a divider", show_alert=False)
+            return
+        
+        # If we get here, it's an unhandled format selection
+        logging.warning(f"Unhandled YouTube format selection: {data}")
+        await callback_query.answer("❌ Unknown format selection", show_alert=True)
+        
+    except Exception as e:
+        logging.error(f"Error in YouTube format callback: {e}")
+        await callback_query.answer("❌ An error occurred. Please try again.", show_alert=True)
 
 
 # Main menu and navigation handlers
