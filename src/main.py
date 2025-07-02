@@ -797,8 +797,10 @@ async def youtube_format_selection_handler(client: Client, callback_query: types
             bot_msg = await callback_query.message.reply_text(f"⏳ Preparing format {format_id} download...", quote=False)
             
             try:
-                # Use youtube_entrance with specific video format
-                await youtube_entrance(client, bot_msg, formats_session['url'], format_id)
+                # Build proper format string for video - try to get video+audio if possible
+                # If it's a video-only format, combine it with best audio
+                format_string = f"{format_id}+bestaudio/bestvideo[format_id={format_id}]+bestaudio/{format_id}"
+                await youtube_entrance(client, bot_msg, formats_session['url'], format_string)
                 delete_youtube_format_session(chat_id)
             except Exception as e:
                 logging.error(f"YouTube video format {format_id} download failed: {e}")
@@ -815,7 +817,7 @@ async def youtube_format_selection_handler(client: Client, callback_query: types
             bot_msg = await callback_query.message.reply_text(f"⏳ Preparing audio format {format_id} download...", quote=False)
             
             try:
-                # Use youtube_entrance with specific audio format
+                # For audio, just use the format ID directly since it's audio-only
                 await youtube_entrance(client, bot_msg, formats_session['url'], format_id)
                 delete_youtube_format_session(chat_id)
             except Exception as e:

@@ -17,7 +17,7 @@ from engine.krakenfiles import krakenfiles_download
 async def youtube_entrance(client, bot_message, url, format_id=None):
     youtube = YoutubeDownload(client, bot_message, url)
     if format_id:
-        # Pass specific format to download
+        # Pass specific format to download - format_id should be the yt-dlp format specifier
         await youtube._start(formats=[format_id])
     else:
         # Use default format selection

@@ -334,8 +334,11 @@ def get_youtube_format_session(uid: int) -> dict:
     """Get YouTube format selection session for user"""
     with session_manager() as session:
         user = session.query(User).filter(User.user_id == uid).first()
-        if user and user.config and 'youtube_formats' in user.config:
-            return user.config['youtube_formats']
+        if user and user.config and 'youtube_formats' in user.config and 'youtube_url' in user.config:
+            return {
+                'formats': user.config['youtube_formats'],
+                'url': user.config['youtube_url']
+            }
         return {}
 
 
@@ -343,9 +346,15 @@ def delete_youtube_format_session(uid: int) -> bool:
     """Delete YouTube format selection session for user"""
     with session_manager() as session:
         user = session.query(User).filter(User.user_id == uid).first()
-        if user and user.config and 'youtube_formats' in user.config:
-            del user.config['youtube_formats']
-            return True
+        if user and user.config:
+            deleted = False
+            if 'youtube_formats' in user.config:
+                del user.config['youtube_formats']
+                deleted = True
+            if 'youtube_url' in user.config:
+                del user.config['youtube_url']
+                deleted = True
+            return deleted
         return False
 
 

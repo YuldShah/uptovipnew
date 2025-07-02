@@ -43,126 +43,122 @@ class InstagramDownload(BaseDownloader):
         pass
 
     async def _download(self, formats=None):
-        # First try using external Instagram service
+        # Use yt-dlp with Instagram cookies instead of external service
         try:
-            resp = requests.get(f"http://instagram:15000/?url={self._url}", timeout=10).json()
-        except requests.exceptions.ConnectionError:
+            import os
+            import yt_dlp
+            from pathlib import Path
+            
+            # Configure yt-dlp options for Instagram
+            ydl_opts = {
+                'outtmpl': str(Path(self._tempdir.name) / '%(title).70s.%(ext)s'),
+                'progress_hooks': [lambda d: self.download_hook(d)],
+                'quiet': True,
+                'no_warnings': True,
+            }
+            
+            # Try to use Instagram cookies
+            cookie_files = ['instagram-cookies.txt', 'cookies.txt']
+            cookie_found = False
+            
+            for cookie_file in cookie_files:
+                if os.path.isfile(cookie_file) and os.path.getsize(cookie_file) > 50:
+                    ydl_opts['cookiefile'] = cookie_file
+                    cookie_found = True
+                    break
+            
+            if not cookie_found:
+                # Try browser cookies as fallback
+                if browsers := os.getenv("BROWSERS"):
+                    ydl_opts['cookiesfrombrowser'] = (browsers.split(",")[0], None)
+                else:
+                    await self._bot_msg.edit_text(
+                        "❌ **Instagram Authentication Required**\n\n"
+                        "Instagram downloads require authentication. Please:\n\n"
+                        "**Option 1: Add Cookie File**\n"
+                        "• Extract cookies from your browser\n"
+                        "• Save as `instagram-cookies.txt` in bot directory\n\n"
+                        "**Option 2: Set Browser in .env**\n"
+                        "• Add `BROWSERS=chrome` to your .env file\n"
+                        "• Make sure you're logged into Instagram in that browser\n\n"
+                        "**Option 3: Use public content only**\n"
+                        "• Try with public Instagram posts (some may work without auth)"
+                    )
+                    return []
+            
+            # Download with yt-dlp
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # Extract info first to check if it's accessible
+                try:
+                    info = ydl.extract_info(self._url, download=False)
+                    if not info:
+                        await self._bot_msg.edit_text(
+                            "❌ **Instagram Content Not Accessible**\n\n"
+                            "This Instagram content might be:\n"
+                            "• Private account\n"
+                            "• Deleted or unavailable\n"
+                            "• Restricted in your region\n"
+                            "• Requires login to view"
+                        )
+                        return []
+                    
+                    # Update progress message
+                    await self._bot_msg.edit_text(f"📱 **Downloading Instagram content...**\n\n🎬 Title: {info.get('title', 'Unknown')[:50]}")
+                    
+                    # Now download
+                    ydl.download([self._url])
+                    
+                except Exception as e:
+                    await self._bot_msg.edit_text(
+                        f"❌ **Instagram Download Failed**\n\n"
+                        f"Error: {str(e)[:200]}\n\n"
+                        "This might be due to:\n"
+                        "• Authentication issues\n"
+                        "• Private content\n"
+                        "• Rate limiting\n"
+                        "• Instagram restrictions"
+                    )
+                    return []
+            
+            # Get downloaded files
+            files = list(Path(self._tempdir.name).glob("*"))
+            if not files:
+                await self._bot_msg.edit_text(
+                    "❌ **No Files Downloaded**\n\n"
+                    "Instagram download completed but no files were found. This could be due to:\n"
+                    "• Content format not supported\n"
+                    "• Download was blocked\n"
+                    "• Authentication issues"
+                )
+                return []
+            
+            # Determine format based on file types
+            video_files = [f for f in files if f.suffix.lower() in ['.mp4', '.mkv', '.webm']]
+            image_files = [f for f in files if f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.webp']]
+            
+            if video_files:
+                self._format = "video"
+            elif image_files:
+                self._format = "photo"
+            else:
+                self._format = "document"
+            
+            return [str(f) for f in files]
+            
+        except ImportError:
             await self._bot_msg.edit_text(
-                "❌ **Instagram Service Unavailable**\n\n"
-                "The Instagram download service is not available.\n"
-                "Instagram downloads require special handling due to authentication requirements.\n\n"
-                "Please contact the admin to set up Instagram cookie authentication."
-            )
-            return []
-        except requests.exceptions.Timeout:
-            await self._bot_msg.edit_text(
-                "⏱️ **Instagram Service Timeout**\n\n"
-                "The Instagram download service is taking too long to respond.\n"
-                "Please try again in a moment."
+                "❌ **Missing Dependencies**\n\n"
+                "yt-dlp is required for Instagram downloads. Please install it:\n"
+                "`pip install yt-dlp`"
             )
             return []
         except Exception as e:
             await self._bot_msg.edit_text(
-                f"❌ **Instagram Download Failed**\n\n"
-                f"Error connecting to Instagram service: {e}\n\n"
-                "This usually means:\n"
-                "• Instagram service is not configured\n"
-                "• Network connectivity issues\n"
-                "• Service maintenance\n\n"
-                "Please try again later or contact admin."
+                f"❌ **Instagram Download Error**\n\n"
+                f"Unexpected error: {str(e)[:200]}\n\n"
+                "Please try again or contact admin if the issue persists."
             )
             return []
-
-        code = self.extract_code()
-        counter = 1
-        video_paths = []
-        found_media_types = set()
-
-        if url_results := resp.get("data"):
-            for media in url_results:
-                link = media["link"]
-                media_type = media["type"]
-
-                if media_type == "image":
-                    ext = "jpg"
-                    found_media_types.add("photo")
-                elif media_type == "video":
-                    ext = "mp4"
-                    found_media_types.add("video")
-                else:
-                    continue
-
-                try:
-                    req = requests.get(link, stream=True)
-                    length = int(req.headers.get("content-length", 0) or req.headers.get("x-full-image-content-length", 0))
-                    filename = f"Instagram_{code}-{counter}"
-                    save_path = pathlib.Path(self._tempdir.name, filename)
-                    chunk_size = 8192
-                    downloaded = 0
-                    start_time = time.time()
-
-                    with open(save_path, "wb") as fp:
-                        for chunk in req.iter_content(chunk_size):
-                            if chunk:
-                                downloaded += len(chunk)
-                                fp.write(chunk)
-
-                                elapsed_time = time.time() - start_time
-                                if elapsed_time > 0:
-                                    speed = downloaded / elapsed_time  # bytes per second
-
-                                    if speed >= 1024 * 1024:  # MB/s
-                                        speed_str = f"{speed / (1024 * 1024):.2f}MB/s"
-                                    elif speed >= 1024:  # KB/s
-                                        speed_str = f"{speed / 1024:.2f}KB/s"
-                                    else:  # B/s
-                                        speed_str = f"{speed:.2f}B/s"
-
-                                    if length > 0:
-                                        eta_seconds = (length - downloaded) / speed
-                                        if eta_seconds >= 3600:
-                                            eta_str = f"{eta_seconds / 3600:.1f}h"
-                                        elif eta_seconds >= 60:
-                                            eta_str = f"{eta_seconds / 60:.1f}m"
-                                        else:
-                                            eta_str = f"{eta_seconds:.0f}s"
-                                    else:
-                                        eta_str = "N/A"
-                                else:
-                                    speed_str = "N/A"
-                                    eta_str = "N/A"
-
-                                # dictionary for calling the download_hook
-                                d = {
-                                    "status": "downloading",
-                                    "downloaded_bytes": downloaded,
-                                    "total_bytes": length,
-                                    "_speed_str": speed_str,
-                                    "_eta_str": eta_str
-                                }
-
-                                self.download_hook(d)
-
-                    if ext := filetype.guess_extension(save_path):
-                        new_path = save_path.with_suffix(f".{ext}")
-                        save_path.rename(new_path)
-                        save_path = new_path
-
-                    video_paths.append(str(save_path))
-                    counter += 1
-
-                except Exception as e:
-                    await self._bot_msg.edit_text(f"Download failed!❌\n\n`{e}`")
-                    return []
-
-        if "video" in found_media_types:
-            self._format = "video"
-        elif "photo" in found_media_types:
-            self._format = "photo"
-        else:
-            self._format = "document"
-
-        return video_paths
 
     async def _start(self):
         downloaded_files = await self._download()
