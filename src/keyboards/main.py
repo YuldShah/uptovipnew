@@ -25,10 +25,10 @@ def create_main_keyboard():
 def create_admin_keyboard():
     """Create the admin keyboard layout."""
     keyboard = types.InlineKeyboardMarkup([
-        [types.InlineKeyboardButton("📊 User Statistics", callback_data="admin_stats")],
+        [types.InlineKeyboardButton("📊 Statistics", callback_data="admin_stats")],
         [types.InlineKeyboardButton("👥 Access Control", callback_data="access_menu")],
-        [types.InlineKeyboardButton("⚙️ Bot Settings", callback_data="admin_settings")],
-        [types.InlineKeyboardButton("❌ Close", callback_data="close_admin")],
+        [types.InlineKeyboardButton("⚙️ Settings", callback_data="settings")],
+        [types.InlineKeyboardButton("❓ Help", callback_data="help")],
     ])
     return keyboard
 
@@ -36,10 +36,10 @@ def create_admin_keyboard():
 def create_settings_keyboard():
     """Create the settings keyboard layout."""
     keyboard = types.InlineKeyboardMarkup([
-        [types.InlineKeyboardButton("🎬 Format Settings", callback_data="format_settings")],
-        [types.InlineKeyboardButton("🎯 Quality Settings", callback_data="quality_settings")],
-        [types.InlineKeyboardButton("🎵 Platform Quality", callback_data="platform_quality")],
-        [types.InlineKeyboardButton("🔙 Back", callback_data="main_menu")],
+        [types.InlineKeyboardButton("📁 Upload Format", callback_data="settings_format")],
+        [types.InlineKeyboardButton("� YouTube Quality", callback_data="settings_youtube_quality")],
+        [types.InlineKeyboardButton("� Platform Quality", callback_data="settings_platform_quality")],
+        [types.InlineKeyboardButton("🔙 Back", callback_data="back_to_main")],
     ])
     return keyboard
 

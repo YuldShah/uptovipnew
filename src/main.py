@@ -343,6 +343,15 @@ async def download_handler(client: Client, message: types.Message):
     url = message.text
     logging.info("start %s", url)
 
+    # Check if user is admin and has an active admin session
+    from utils.access_control import is_admin
+    from handlers.admin import admin_sessions
+    
+    if await is_admin(client, chat_id) and chat_id in admin_sessions:
+        logging.info(f"Admin {chat_id} has active session, processing as admin input")
+        # Don't process as download URL, let admin handlers deal with it
+        return
+
     # Check user state for special download modes
     user_state = await get_user_state(chat_id)
     
@@ -939,10 +948,67 @@ async def main_navigation_handler(client: Client, callback_query: types.Callback
             )
             
         elif data == "stats":
-            # Show user statistics
+            # Show real statistics for all users
+            from database.model import get_download_statistics, get_user_download_stats
+            import time
+            
+            # Get system stats
+            cpu_usage = psutil.cpu_percent()
+            memory = psutil.virtual_memory()
+            total, used, free, disk = psutil.disk_usage("/")
+            
+            # Get bot stats
+            bot_uptime = timeof_fmt(time.time() - botStartTime)
+            
+            # Get download statistics
+            try:
+                stats = get_download_statistics()
+                user_stats = get_user_download_stats(chat_id)
+            except Exception as e:
+                logging.error(f"Error getting download stats: {e}")
+                stats = {
+                    'total_downloads': 0,
+                    'successful_downloads': 0,
+                    'failed_downloads': 0,
+                    'total_users': 0,
+                    'recent_downloads_24h': 0
+                }
+                user_stats = {
+                    'total_downloads': 0,
+                    'successful_downloads': 0,
+                    'success_rate': 0
+                }
+            
+            stats_text = f"""📊 **Bot Statistics**
+
+🤖 **System Status:**
+• CPU Usage: {cpu_usage}%
+• RAM Usage: {memory.percent}%
+• Disk Usage: {disk}%
+• Bot Uptime: {bot_uptime}
+
+📈 **Download Statistics:**
+• Total Downloads: {stats.get('total_downloads', 0)}
+• Successful: {stats.get('successful_downloads', 0)}
+• Failed: {stats.get('failed_downloads', 0)}
+• Downloads Today: {stats.get('recent_downloads_24h', 0)}
+
+👥 **User Statistics:**
+• Total Users: {stats.get('total_users', 0)}
+• Your Downloads: {user_stats.get('total_downloads', 0)}
+• Your Success Rate: {user_stats.get('success_rate', 0)}%
+
+💾 **Storage:**
+• Total Space: {sizeof_fmt(total)}
+• Used: {sizeof_fmt(used)}
+• Free: {sizeof_fmt(free)}"""
+            
             await callback_query.edit_message_text(
-                "📊 **Statistics**\n\nThis feature is coming soon!",
-                reply_markup=create_back_keyboard("main_menu")
+                stats_text,
+                reply_markup=types.InlineKeyboardMarkup([
+                    [types.InlineKeyboardButton("🔄 Refresh", callback_data="stats")],
+                    [types.InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+                ])
             )
             
         await callback_query.answer()
@@ -968,109 +1034,69 @@ async def admin_callback_handler(client: Client, callback_query: types.CallbackQ
     
     try:
         if data == "admin_stats":
-            # Show user statistics
-            # TODO: Implement real statistics
-            stats_text = """📊 **Bot Statistics**
+            # Show real statistics
+            from database.model import get_download_statistics, get_user_download_stats
+            import time
+            
+            # Get system stats
+            cpu_usage = psutil.cpu_percent()
+            memory = psutil.virtual_memory()
+            total, used, free, disk = psutil.disk_usage("/")
+            
+            # Get bot stats
+            bot_uptime = timeof_fmt(time.time() - botStartTime)
+            
+            # Get download statistics
+            try:
+                stats = get_download_statistics()
+                user_stats = get_user_download_stats(chat_id)
+            except Exception as e:
+                logging.error(f"Error getting download stats: {e}")
+                stats = {
+                    'total_downloads': 0,
+                    'successful_downloads': 0,
+                    'failed_downloads': 0,
+                    'total_users': 0,
+                    'downloads_today': 0
+                }
+                user_stats = {
+                    'total_downloads': 0,
+                    'successful_downloads': 0,
+                    'success_rate': 0
+                }
+            
+            stats_text = f"""📊 **Bot Statistics**
 
-👤 **User Statistics:**
-• Total Users: Coming soon
-• Active Users: Coming soon
-• Downloads Today: Coming soon
+🤖 **System Status:**
+• CPU Usage: {cpu_usage}%
+• RAM Usage: {memory.percent}%
+• Disk Usage: {disk}%
+• Bot Uptime: {bot_uptime}
 
-📈 **System Statistics:**
-• Bot Uptime: Coming soon
-• Total Downloads: Coming soon
-• Storage Used: Coming soon
+� **Download Statistics:**
+• Total Downloads: {stats.get('total_downloads', 0)}
+• Successful: {stats.get('successful_downloads', 0)}
+• Failed: {stats.get('failed_downloads', 0)}
+• Downloads Today: {stats.get('downloads_today', 0)}
 
-🔧 **Technical:**
-• Database Status: ✅ Connected
-• Redis Status: ⚠️ Fake Redis
-• Download Queue: Coming soon"""
+� **User Statistics:**
+• Total Users: {stats.get('total_users', 0)}
+• Your Downloads: {user_stats.get('downloads_count', 0)}
+• Your Success Rate: {user_stats.get('success_rate', 0)}%
+
+� **Storage:**
+• Total Space: {sizeof_fmt(total)}
+• Used: {sizeof_fmt(used)}
+• Free: {sizeof_fmt(free)}"""
             
             await callback_query.edit_message_text(
                 stats_text,
                 reply_markup=types.InlineKeyboardMarkup([
                     [types.InlineKeyboardButton("🔄 Refresh", callback_data="admin_stats")],
-                    [types.InlineKeyboardButton("🏠 Back to Admin", callback_data="admin_menu")]
+                    [types.InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
                 ])
             )
             
-        elif data == "admin_users":
-            # Show user management
-            users_text = """👥 **User Management**
-
-🛡️ **Access Control:**
-• Total Users: Coming soon
-• Blocked Users: Coming soon
-• Channel Subscribers: Coming soon
-
-⚙️ **Management Options:**
-• View User List
-• Block/Unblock Users
-• Channel Management
-• Access Logs
-
-_This feature is under development._"""
-            
-            await callback_query.edit_message_text(
-                users_text,
-                reply_markup=types.InlineKeyboardMarkup([
-                    [types.InlineKeyboardButton("📝 View Logs", callback_data="admin_logs")],
-                    [types.InlineKeyboardButton("🏠 Back to Admin", callback_data="admin_menu")]
-                ])
-            )
-            
-        elif data == "admin_settings":
-            # Show bot settings
-            settings_text = """⚙️ **Bot Settings**
-
-🤖 **Current Configuration:**
-• Private Mode: ✅ Enabled
-• Admin Access: ✅ Active
-• Download Modes: All Enabled
-• Error Handling: ✅ Active
-
-🔧 **System Settings:**
-• Logging Level: INFO
-• Max File Size: Unlimited
-• Concurrent Downloads: 4
-• Auto-cleanup: Enabled
-
-_Settings can be modified in the config files._"""
-            
-            await callback_query.edit_message_text(
-                settings_text,
-                reply_markup=types.InlineKeyboardMarkup([
-                    [types.InlineKeyboardButton("📋 View Config", callback_data="admin_config")],
-                    [types.InlineKeyboardButton("🏠 Back to Admin", callback_data="admin_menu")]
-                ])
-            )
-            
-        elif data == "admin_menu":
-            # Back to admin menu
-            await callback_query.edit_message_text(
-                "🔧 **Admin Panel**\n\nChoose an administrative function:",
-                reply_markup=create_admin_keyboard()
-            )
-            
-        elif data == "admin_logs":
-            # Show recent logs (placeholder)
-            await callback_query.edit_message_text(
-                "📝 **Recent Activity Logs**\n\n_This feature is under development._\n\nFor now, check the server logs directly.",
-                reply_markup=types.InlineKeyboardMarkup([
-                    [types.InlineKeyboardButton("🏠 Back to Admin", callback_data="admin_menu")]
-                ])
-            )
-            
-        elif data == "admin_config":
-            # Show config info (placeholder)
-            await callback_query.edit_message_text(
-                "📋 **Configuration**\n\n_This feature is under development._\n\nConfig files are located in the `config/` directory.",
-                reply_markup=types.InlineKeyboardMarkup([
-                    [types.InlineKeyboardButton("🏠 Back to Admin", callback_data="admin_menu")]
-                ])
-            )
-        
         await callback_query.answer()
         
     except Exception as e:

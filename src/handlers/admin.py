@@ -50,10 +50,8 @@ def create_access_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📢 Manage Channels", callback_data="manage_channels")],
         [InlineKeyboardButton("👤 Manual Access", callback_data="manual_access")],
-        [InlineKeyboardButton("📊 Statistics", callback_data="access_stats")],
-        [InlineKeyboardButton("🔍 User Search", callback_data="user_search")],
-        [InlineKeyboardButton("🏆 Top Users", callback_data="top_users")],
-        [InlineKeyboardButton("❌ Close", callback_data="close_admin")]
+        [InlineKeyboardButton(" User Search", callback_data="user_search")],
+        [InlineKeyboardButton("� Main Menu", callback_data="main_menu")]
     ])
 
 
