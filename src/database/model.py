@@ -430,37 +430,58 @@ def create_youtube_format_session(uid: int, url: str, formats: dict) -> bool:
         
         # Create a unique session ID for this format selection
         session_id = uuid.uuid4().hex[:8]
+        current_time = time.time()
         
         user.config['youtube_formats'] = formats
         user.config['youtube_url'] = url
-        user.config['youtube_session_time'] = time.time()
+        user.config['youtube_session_time'] = current_time
         user.config['youtube_session_id'] = session_id
+        
+        # Force commit to ensure data is saved
+        session.commit()
+        
+        import logging
+        logging.info(f"Created YouTube session for user {uid}: URL={url}, session_id={session_id}, time={current_time}")
         return True
 
 
 def get_youtube_format_session(uid: int) -> dict:
     """Get YouTube format selection session for user"""
     import time
+    import logging
     with session_manager() as session:
         user = session.query(User).filter(User.user_id == uid).first()
         if user and user.config and 'youtube_formats' in user.config and 'youtube_url' in user.config:
             # Check if session is stale (older than 10 minutes)
             session_time = user.config.get('youtube_session_time', 0)
-            if time.time() - session_time > 600:  # 10 minutes
-                # Clean up stale session
-                if 'youtube_formats' in user.config:
-                    del user.config['youtube_formats']
-                if 'youtube_url' in user.config:
-                    del user.config['youtube_url']
-                if 'youtube_session_time' in user.config:
-                    del user.config['youtube_session_time']
-                return {}
+            current_time = time.time()
+            time_diff = current_time - session_time
+            
+            logging.info(f"Session check for user {uid}: session_time={session_time}, current_time={current_time}, diff={time_diff} seconds")
+            
+            # TEMPORARILY DISABLE EXPIRY CHECK FOR DEBUGGING
+            # if time_diff > 1800:  # 30 minutes instead of 10
+            #     logging.info(f"Session expired for user {uid} (age: {time_diff} seconds)")
+            #     # Clean up stale session
+            #     if 'youtube_formats' in user.config:
+            #         del user.config['youtube_formats']
+            #     if 'youtube_url' in user.config:
+            #         del user.config['youtube_url']
+            #     if 'youtube_session_time' in user.config:
+            #         del user.config['youtube_session_time']
+            #     if 'youtube_session_id' in user.config:
+            #         del user.config['youtube_session_id']
+            #     session.commit()
+            #     return {}
                 
+            logging.info(f"Session valid for user {uid}, returning session data for URL: {user.config['youtube_url']}")
             return {
                 'formats': user.config['youtube_formats'],
                 'url': user.config['youtube_url'],
                 'session_id': user.config.get('youtube_session_id', 'unknown')
             }
+        
+        logging.info(f"No session found for user {uid}")
         return {}
 
 
