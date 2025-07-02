@@ -296,7 +296,7 @@ def set_user_platform_quality(uid: int, quality: str, platform: str = 'youtube')
     return set_user_settings(uid, quality=quality)
 
 
-def create_youtube_format_session(uid: int, formats: dict) -> bool:
+def create_youtube_format_session(uid: int, url: str, formats: dict) -> bool:
     """Create a YouTube format selection session for user"""
     with session_manager() as session:
         user = session.query(User).filter(User.user_id == uid).first()
@@ -308,6 +308,7 @@ def create_youtube_format_session(uid: int, formats: dict) -> bool:
             user.config = {}
         
         user.config['youtube_formats'] = formats
+        user.config['youtube_url'] = url
         return True
 
 
