@@ -22,17 +22,33 @@
 4. Choose a username: `your_ytdl_bot` (must end with 'bot')
 5. Copy the token (format: `123456789:ABCdefGHIjklMNOpqrSTUvwxyz`)
 
-### 2. **Get Your User ID**
+### 2. **Get Admin User IDs**
 
-#### OWNER (Your User ID)
+#### ADMIN_IDS (Bot Administrators)
 1. Message [@userinfobot](https://t.me/userinfobot) on Telegram
 2. It will reply with your user ID (a number like `123456789`)
-3. This is your `OWNER` ID
+3. Add other admin user IDs separated by commas: `123456789,987654321`
+4. **Admin users have full control:**
+   - Can use `/admin` command
+   - Can manage channel requirements
+   - Can whitelist/ban users
+   - Have unlimited access to bot features
 
-#### ADMIN_IDS (Additional Admins)
-- Use the same method to get user IDs for other people you want as admins
-- Separate multiple IDs with commas: `123456789,987654321`
-- Admins can manage channel requirements and user access
+## 👥 **Two Types of Users**
+
+### 🔧 **Admin Users**
+- Listed in `ADMIN_IDS` environment variable
+- Full control over bot settings and access control
+- Can manage required channels and user permissions
+- Always have access regardless of other restrictions
+
+### 👤 **Regular Users** 
+- All users not listed in `ADMIN_IDS`
+- Subject to access control rules:
+  - Must meet channel membership requirements (if any)
+  - Can be manually whitelisted by admins (bypass channel requirements)
+  - Can be banned by admins (deny all access)
+  - Default status: must follow channel membership rules
 
 ### 3. **Database Setup**
 
@@ -55,8 +71,7 @@ For **Local PostgreSQL**:
 APP_ID=12345678
 APP_HASH=1a2b3c4d5e6f7g8h9i0j
 BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxyz
-OWNER=123456789
-ADMIN_IDS=123456789
+ADMIN_IDS=123456789,987654321
 
 # Database (for Docker)
 DB_DSN=postgresql+psycopg2://ytdlbot:ytdlbot@postgres/ytdlbot
@@ -150,7 +165,7 @@ docker run -d --env-file .env ytdlbot
 1. **"Invalid token"**: Check your `BOT_TOKEN` format
 2. **"Database connection failed"**: Verify `DB_DSN` and database is running
 3. **"Bot not responding"**: Ensure `APP_ID` and `APP_HASH` are correct
-4. **"Access denied"**: Check if your user ID is in `OWNER` or `ADMIN_IDS`
+4. **"Access denied"**: Check if your user ID is in `ADMIN_IDS`
 
 ### Getting Help
 - Check logs: `docker-compose logs ytdlbot`
@@ -164,7 +179,7 @@ docker run -d --env-file .env ytdlbot
 | `APP_ID` | ✅ | Telegram API ID from my.telegram.org |
 | `APP_HASH` | ✅ | Telegram API hash from my.telegram.org |
 | `BOT_TOKEN` | ✅ | Bot token from @BotFather |
-| `OWNER` | ✅ | Your user ID (bot owner) |
+| `ADMIN_IDS` | ✅ | Admin user IDs (full bot control) |
 | `ADMIN_IDS` | ✅ | Admin user IDs (can manage access) |
 | `DB_DSN` | ✅ | Database connection string |
 | `ACCESS_CONTROL_ENABLED` | ⚠️ | Enable access control (recommended: True) |

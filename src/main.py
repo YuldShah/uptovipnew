@@ -20,12 +20,10 @@ from pyrogram import Client, enums, filters, types
 from config import (
     APP_HASH,
     APP_ID,
-    AUTHORIZED_USER,
     BOT_TOKEN,
     ENABLE_ARIA2,
     ENABLE_FFMPEG,
     M3U8_SUPPORT,
-    OWNER,
     BotText,
 )
 from database.model import (
@@ -46,6 +44,7 @@ from database.model import (
 from engine import direct_entrance, youtube_entrance, special_download_entrance
 from engine.youtube_formats import extract_youtube_formats, is_youtube_url
 from handlers.admin import register_admin_handlers
+from utils.access_control import get_admin_list
 from keyboards.main import (
     create_main_keyboard,
     create_admin_keyboard,
@@ -61,7 +60,6 @@ from utils.access_control import check_full_user_access, get_access_denied_messa
 from utils.stats_logger import start_stats_logging, stop_stats_logging
 from utils.error_handling import setup_comprehensive_logging, error_handler, download_error_handler
 
-logging.info("Authorized users are %s", AUTHORIZED_USER)
 logging.getLogger("apscheduler.executors.default").propagate = False
 
 
@@ -404,7 +402,13 @@ async def download_handler(client: Client, message: types.Message):
         f.seek(0)  # Reset pointer to beginning of file
         await message.reply_document(f, caption=f"Flood wait! Please wait {e} seconds...", quote=True)
         f.close()
-        await client.send_message(OWNER, f"Flood wait! 🙁 {e} seconds....")
+        # Notify all admins about flood wait
+        admin_list = get_admin_list()
+        for admin_id in admin_list:
+            try:
+                await client.send_message(admin_id, f"Flood wait! 🙁 {e} seconds....")
+            except Exception:
+                pass  # Skip if can't send to this admin
         await asyncio.sleep(e.value)
     except ValueError as e:
         await clear_user_state(chat_id)  # Clear state on error

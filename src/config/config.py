@@ -13,7 +13,7 @@ def get_env(name: str, default=None):
             return True
         if val.lower() == "false":
             return False
-        if val.isdigit() and name != "AUTHORIZED_USER":
+        if val.isdigit():
             return int(val)
     return val
 
@@ -23,9 +23,11 @@ WORKERS: int = get_env("WORKERS", 100)
 APP_ID: int = get_env("APP_ID")
 APP_HASH = get_env("APP_HASH")
 BOT_TOKEN = get_env("BOT_TOKEN")
-OWNER = [int(i) for i in str(get_env("OWNER")).split(",")]
-# db settings
-AUTHORIZED_USER: str = get_env("AUTHORIZED_USER", "")
+
+# admin settings - only admins, no separate owner concept
+ADMIN_IDS = get_env("ADMIN_IDS", "")  # comma-separated admin user IDs
+
+# database settings
 DB_DSN = get_env("DB_DSN")
 REDIS_HOST = get_env("REDIS_HOST")
 
@@ -35,9 +37,6 @@ M3U8_SUPPORT = get_env("M3U8_SUPPORT")
 ENABLE_ARIA2 = get_env("ENABLE_ARIA2")
 
 RCLONE_PATH = get_env("RCLONE")
-
-# admin settings
-ADMIN_IDS = get_env("ADMIN_IDS", "")  # comma-separated admin user IDs
 
 # access control settings
 ACCESS_CONTROL_ENABLED = get_env("ACCESS_CONTROL_ENABLED", True)  # enable access control
