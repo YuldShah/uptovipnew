@@ -3,6 +3,7 @@
 
 # ytdlbot - __init__.py.py
 
+import logging
 from urllib.parse import urlparse
 from typing import Any, Callable
 
@@ -13,9 +14,14 @@ from engine.instagram import InstagramDownload
 from engine.krakenfiles import krakenfiles_download
 
 
-async def youtube_entrance(client, bot_message, url):
+async def youtube_entrance(client, bot_message, url, format_id=None):
     youtube = YoutubeDownload(client, bot_message, url)
-    await youtube.start()
+    if format_id:
+        # Pass specific format to download
+        await youtube._start(formats=[format_id])
+    else:
+        # Use default format selection
+        await youtube.start()
 
 
 async def direct_entrance(client, bot_message, url):

@@ -42,12 +42,36 @@ class InstagramDownload(BaseDownloader):
     def _setup_formats(self) -> list | None:
         pass
 
-    def _download(self, formats=None):
+    async def _download(self, formats=None):
+        # First try using external Instagram service
         try:
-            resp = requests.get(f"http://instagram:15000/?url={self._url}").json()
+            resp = requests.get(f"http://instagram:15000/?url={self._url}", timeout=10).json()
+        except requests.exceptions.ConnectionError:
+            await self._bot_msg.edit_text(
+                "❌ **Instagram Service Unavailable**\n\n"
+                "The Instagram download service is not available.\n"
+                "Instagram downloads require special handling due to authentication requirements.\n\n"
+                "Please contact the admin to set up Instagram cookie authentication."
+            )
+            return []
+        except requests.exceptions.Timeout:
+            await self._bot_msg.edit_text(
+                "⏱️ **Instagram Service Timeout**\n\n"
+                "The Instagram download service is taking too long to respond.\n"
+                "Please try again in a moment."
+            )
+            return []
         except Exception as e:
-            self._bot_msg.edit_text(f"Download failed!❌\n\n`{e}`")
-            pass
+            await self._bot_msg.edit_text(
+                f"❌ **Instagram Download Failed**\n\n"
+                f"Error connecting to Instagram service: {e}\n\n"
+                "This usually means:\n"
+                "• Instagram service is not configured\n"
+                "• Network connectivity issues\n"
+                "• Service maintenance\n\n"
+                "Please try again later or contact admin."
+            )
+            return []
 
         code = self.extract_code()
         counter = 1
@@ -128,7 +152,7 @@ class InstagramDownload(BaseDownloader):
                     counter += 1
 
                 except Exception as e:
-                    self._bot_msg.edit_text(f"Download failed!❌\n\n`{e}`")
+                    await self._bot_msg.edit_text(f"Download failed!❌\n\n`{e}`")
                     return []
 
         if "video" in found_media_types:
@@ -140,6 +164,7 @@ class InstagramDownload(BaseDownloader):
 
         return video_paths
 
-    def _start(self):
-        downloaded_files = self._download()
-        self._upload(files=downloaded_files)
+    async def _start(self):
+        downloaded_files = await self._download()
+        if downloaded_files:  # Only upload if download was successful
+            await self._upload(files=downloaded_files)

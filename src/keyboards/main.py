@@ -89,21 +89,6 @@ def create_youtube_format_keyboard(formats_dict: dict):
     """
     buttons = []
     
-    # Add quick selection options first
-    buttons.append([
-        types.InlineKeyboardButton("🎬 Best Quality", callback_data="ytfmt_best"),
-        types.InlineKeyboardButton("💾 Small Size", callback_data="ytfmt_worst")
-    ])
-    
-    buttons.append([
-        types.InlineKeyboardButton("🎵 Audio Only", callback_data="ytfmt_audio_best")
-    ])
-    
-    # Add divider
-    buttons.append([
-        types.InlineKeyboardButton("━━━ Custom Selection ━━━", callback_data="ytfmt_divider")
-    ])
-    
     # Add video formats (limit to top 8 to avoid too many buttons)
     video_formats = formats_dict.get('video_formats', [])
     shown_video = 0
@@ -120,7 +105,7 @@ def create_youtube_format_keyboard(formats_dict: dict):
         if fmt.get('height') in heights_shown:
             continue
             
-        display_name = get_format_display_name(fmt)
+        display_name = f"📽️ {get_format_display_name(fmt)}"
         if len(display_name) > 30:  # Limit button text length
             display_name = display_name[:27] + "..."
             
@@ -131,12 +116,10 @@ def create_youtube_format_keyboard(formats_dict: dict):
     # Add audio formats (limit to top 3)
     audio_formats = formats_dict.get('audio_formats', [])
     if audio_formats:
-        buttons.append([
-            types.InlineKeyboardButton("━━━ Audio Only ━━━", callback_data="ytfmt_audio_divider")
-        ])
+        
         
         for i, fmt in enumerate(audio_formats[:3]):
-            display_name = get_format_display_name(fmt)
+            display_name = f"🎵 {get_format_display_name(fmt)}"
             if len(display_name) > 30:
                 display_name = display_name[:27] + "..."
                 
