@@ -15,11 +15,14 @@ from engine.krakenfiles import krakenfiles_download
 
 
 async def youtube_entrance(client, bot_message, url, format_id=None):
+    logging.info(f"youtube_entrance called with URL: {url}")
     youtube = YoutubeDownload(client, bot_message, url)
     if format_id:
+        logging.info(f"Using specific format {format_id} for URL: {url}")
         # Pass specific format to download - format_id should be the yt-dlp format specifier
         await youtube._start(formats=[format_id])
     else:
+        logging.info(f"Using default format selection for URL: {url}")
         # Use default format selection
         await youtube.start()
 

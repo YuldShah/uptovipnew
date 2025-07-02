@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import tempfile
+import time
 import uuid
 from abc import ABC, abstractmethod
 from io import StringIO
@@ -48,6 +49,7 @@ def generate_input_media(file_paths: list, cap: str) -> list:
 
 class BaseDownloader(ABC):
     def __init__(self, client: Types.Client, bot_msg: Types.Message, url: str):
+        logging.info(f"BaseDownloader initialized with URL: {url}")
         self._client = client
         self._url = url
         # chat id is the same for private chat
@@ -349,8 +351,12 @@ class BaseDownloader(ABC):
 
     def _calc_video_key(self):
         h = hashlib.md5()
-        h.update((self._url + self._quality + self._format).encode())
+        # Include URL and current timestamp for uniqueness - disable caching essentially
+        # This prevents URL corruption when fake redis is used
+        unique_string = f"{self._url}:{self._quality}:{self._format}:{uuid.uuid4().hex}"
+        h.update(unique_string.encode())
         key = h.hexdigest()
+        logging.debug(f"Generated cache key: {key} for URL: {self._url}")
         return key
 
     @final
