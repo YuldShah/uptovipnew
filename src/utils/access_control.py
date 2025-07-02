@@ -9,7 +9,7 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait, UserNotParticipant, ChannelPrivate, ChatAdminRequired
 
 from config.config import ADMIN_IDS, ACCESS_CONTROL_ENABLED
-from database.model import check_user_access, get_required_channels
+from database.model import check_user_access, get_required_channels, check_full_user_access
 
 logger = logging.getLogger(__name__)
 

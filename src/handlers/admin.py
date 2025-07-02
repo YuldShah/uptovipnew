@@ -14,7 +14,9 @@ from config.config import ADMIN_IDS
 from database.model import (
     add_channel, remove_channel, get_required_channels, 
     set_user_access_status, get_user_access_status,
-    session_manager, User
+    session_manager, User, get_download_statistics,
+    get_user_download_stats, get_top_users, search_users,
+    get_user_info
 )
 from utils.access_control import get_admin_list
 
@@ -48,7 +50,9 @@ def create_access_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📢 Manage Channels", callback_data="manage_channels")],
         [InlineKeyboardButton("👤 Manual Access", callback_data="manual_access")],
-        [InlineKeyboardButton("📊 Access Stats", callback_data="access_stats")],
+        [InlineKeyboardButton("📊 Statistics", callback_data="access_stats")],
+        [InlineKeyboardButton("🔍 User Search", callback_data="user_search")],
+        [InlineKeyboardButton("🏆 Top Users", callback_data="top_users")],
         [InlineKeyboardButton("❌ Close", callback_data="close_admin")]
     ])
 
@@ -246,31 +250,272 @@ async def admin_callback_handler(client: Client, callback_query: CallbackQuery):
         )
     
     elif data == "access_stats":
-        # Get basic stats
-        with session_manager() as session:
-            total_users = session.query(User).count()
-            whitelisted = session.query(User).filter(User.access_status == 1).count()
-            banned = session.query(User).filter(User.access_status == -1).count()
-            normal = session.query(User).filter(User.access_status == 0).count()
-        
+        # Get comprehensive statistics
+        stats = get_download_statistics()
         channels = get_required_channels()
         admin_count = len(get_admin_list())
         
+        # Format file sizes
+        def format_size(bytes_size):
+            for unit in ['B', 'KB', 'MB', 'GB']:
+                if bytes_size < 1024.0:
+                    return f"{bytes_size:.1f} {unit}"
+                bytes_size /= 1024.0
+            return f"{bytes_size:.1f} TB"
+        
         stats_text = (
-            "📊 **Access Control Statistics**\n\n"
-            f"👥 **Total Users:** {total_users}\n"
-            f"✅ **Whitelisted:** {whitelisted}\n"
-            f"❌ **Banned:** {banned}\n"
-            f"👤 **Normal:** {normal}\n\n"
-            f"📢 **Required Channels:** {len(channels)}\n"
-            f"👨‍💼 **Administrators:** {admin_count}\n"
+            "📊 **Comprehensive Bot Statistics**\n\n"
+            "**👥 User Statistics:**\n"
+            f"• Total Users: {stats['total_users']}\n"
+            f"• Active Users: {stats['active_users']}\n"
+            f"• Whitelisted: {stats['whitelisted_users']}\n"
+            f"• Banned: {stats['banned_users']}\n"
+            f"• Normal: {stats['normal_users']}\n\n"
+            "**📥 Download Statistics:**\n"
+            f"• Total Downloads: {stats['total_downloads']}\n"
+            f"• Successful: {stats['successful_downloads']}\n"
+            f"• Failed: {stats['failed_downloads']}\n"
+            f"• Success Rate: {stats['success_rate']}%\n"
+            f"• Last 24h: {stats['recent_downloads_24h']} downloads\n"
+            f"• Active Users (24h): {stats['recent_users_24h']}\n\n"
+            "**🌍 Platform Breakdown:**\n"
         )
+        
+        for platform, data in stats['platform_stats'].items():
+            stats_text += f"• {platform.title()}: {data['count']} downloads (avg: {data['avg_time']}s, {format_size(data['total_size'])})\n"
+        
+        stats_text += f"\n**⚙️ Access Control:**\n"
+        stats_text += f"• Required Channels: {len(channels)}\n"
+        stats_text += f"• Administrators: {admin_count}\n"
         
         await callback_query.edit_message_text(
             stats_text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="access_menu")]])
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Refresh", callback_data="access_stats")],
+                [InlineKeyboardButton("🏆 Top Users", callback_data="top_users")],
+                [InlineKeyboardButton("🔙 Back", callback_data="access_menu")]
+            ])
         )
     
+    elif data == "top_users":
+        top_users = get_top_users(limit=10)
+        
+        if not top_users:
+            stats_text = "🏆 **Top Users**\n\nNo download activity recorded yet."
+        else:
+            stats_text = "🏆 **Top Users by Downloads**\n\n"
+            for i, user in enumerate(top_users, 1):
+                user_mention = f"<a href='tg://user?id={user['user_id']}'>{user['user_id']}</a>"
+                stats_text += f"{i}. {user_mention}\n"
+                stats_text += f"   📥 {user['download_count']} downloads ({user['success_rate']}% success)\n\n"
+        
+        await callback_query.edit_message_text(
+            stats_text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔍 Search Users", callback_data="user_search")],
+                [InlineKeyboardButton("🔙 Back", callback_data="access_menu")]
+            ])
+        )
+    
+    elif data == "user_search":
+        admin_sessions[user_id] = {"action": "user_search", "step": "waiting_input"}
+        await callback_query.edit_message_text(
+            "� **User Search**\n\n"
+            "Send a user ID to search for specific user, or use one of the options below:\n\n"
+            "**Quick Filters:**\n"
+            "• All users\n"
+            "• Whitelisted users only\n"
+            "• Banned users only\n"
+            "• Normal users only",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("👥 All Users", callback_data="search_all_users")],
+                [InlineKeyboardButton("✅ Whitelisted", callback_data="search_whitelisted")],
+                [InlineKeyboardButton("❌ Banned", callback_data="search_banned")],
+                [InlineKeyboardButton("👤 Normal", callback_data="search_normal")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="access_menu")]
+            ])
+        )
+    
+    elif data.startswith("search_"):
+        search_type = data.replace("search_", "")
+        status_filter = None
+        
+        if search_type == "whitelisted":
+            status_filter = 1
+            title = "✅ Whitelisted Users"
+        elif search_type == "banned":
+            status_filter = -1
+            title = "❌ Banned Users"
+        elif search_type == "normal":
+            status_filter = 0
+            title = "👤 Normal Users"
+        else:
+            title = "👥 All Users"
+        
+        users = search_users(status_filter=status_filter, limit=20)
+        
+        if not users:
+            result_text = f"{title}\n\nNo users found."
+        else:
+            result_text = f"{title}\n\n"
+            for user in users[:15]:  # Limit to avoid message length issues
+                user_mention = f"<a href='tg://user?id={user['user_id']}'>{user['user_id']}</a>"
+                status_emoji = {"Banned": "❌", "Whitelisted": "✅", "Normal": "👤"}.get(user['access_status_text'], "❓")
+                result_text += f"{status_emoji} {user_mention} - {user['download_count']} downloads\n"
+            
+            if len(users) > 15:
+                result_text += f"\n... and {len(users) - 15} more users"
+        
+        await callback_query.edit_message_text(
+            result_text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔍 New Search", callback_data="user_search")],
+                [InlineKeyboardButton("🔙 Back", callback_data="access_menu")]
+            ])
+        )
+    
+    elif data.startswith("execute_"):
+        parts = data.split("_")
+        if len(parts) >= 3:
+            action_type = "_".join(parts[1:3])  # "whitelist_user" or "ban_user"
+            target_user_id = int(parts[3])
+            
+            # Get session data for user details
+            session_data = admin_sessions.get(user_id, {})
+            target_mention = session_data.get("target_mention", f"<a href='tg://user?id={target_user_id}'>User {target_user_id}</a>")
+            
+            if action_type == "whitelist_user":
+                set_user_access_status(target_user_id, 1)
+                await callback_query.edit_message_text(
+                    f"✅ **User Whitelisted Successfully**\n\n"
+                    f"**User:** {target_mention}\n"
+                    f"**ID:** `{target_user_id}`\n\n"
+                    f"This user now has permanent access to the bot, regardless of channel membership.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👤 Manage Users", callback_data="manual_access")]])
+                )
+            elif action_type == "ban_user":
+                set_user_access_status(target_user_id, -1)
+                await callback_query.edit_message_text(
+                    f"❌ **User Banned Successfully**\n\n"
+                    f"**User:** {target_mention}\n"
+                    f"**ID:** `{target_user_id}`\n\n"
+                    f"This user is now denied access to the bot.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👤 Manage Users", callback_data="manual_access")]])
+                )
+            
+            # Clear session
+            if user_id in admin_sessions:
+                del admin_sessions[user_id]
+    
+    elif data.startswith("confirm_whitelist_") or data.startswith("confirm_ban_"):
+        action_type = "whitelist" if data.startswith("confirm_whitelist_") else "ban"
+        target_user_id = int(data.split("_")[-1])
+        
+        try:
+            # Get user info
+            user_info = await client.get_users(target_user_id)
+            username = user_info.username
+            full_name = f"{user_info.first_name or ''} {user_info.last_name or ''}".strip()
+            mention = f"@{username}" if username else f"<a href='tg://user?id={target_user_id}'>{full_name or 'User'}</a>"
+        except:
+            mention = f"<a href='tg://user?id={target_user_id}'>User {target_user_id}</a>"
+        
+        current_status = get_user_access_status(target_user_id)
+        action_emoji = "✅" if action_type == "whitelist" else "❌"
+        
+        confirm_text = (
+            f"{action_emoji} **Confirm {action_type.title()}**\n\n"
+            f"**User:** {mention}\n"
+            f"**ID:** `{target_user_id}`\n"
+            f"**Current Status:** {['Normal', 'Whitelisted', '', 'Banned'][current_status + 1]}\n\n"
+            f"Are you sure you want to **{action_type}** this user?"
+        )
+        
+        if action_type == "whitelist":
+            confirm_text += "\n\n**Note:** User will have permanent access regardless of channel membership."
+        else:
+            confirm_text += "\n\n**Warning:** User will be denied access even if they join required channels."
+        
+        await callback_query.edit_message_text(
+            confirm_text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"{action_emoji} Confirm {action_type.title()}", callback_data=f"execute_{action_type}_user_{target_user_id}")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="manual_access")]
+            ])
+        )
+    
+    elif data.startswith("user_details_"):
+        target_user_id = int(data.split("_")[-1])
+        
+        try:
+            # Get user info from Telegram
+            user_info = await client.get_users(target_user_id)
+            username = user_info.username
+            full_name = f"{user_info.first_name or ''} {user_info.last_name or ''}".strip()
+            mention = f"@{username}" if username else f"<a href='tg://user?id={target_user_id}'>{full_name or 'User'}</a>"
+        except:
+            mention = f"<a href='tg://user?id={target_user_id}'>User {target_user_id}</a>"
+            username = None
+            full_name = "Unknown"
+        
+        current_status = get_user_access_status(target_user_id)
+        status_text = {
+            -1: "❌ **Banned**",
+            0: "👤 **Normal** (subject to channel membership)",
+            1: "✅ **Whitelisted** (always has access)"
+        }
+        
+        # Get user's download stats
+        download_stats = get_user_download_stats(target_user_id)
+        
+        user_details = (
+            f"🔍 **User Information**\n\n"
+            f"**User:** {mention}\n"
+            f"**ID:** `{target_user_id}`\n"
+            f"**Username:** {f'@{username}' if username else 'None'}\n"
+            f"**Full Name:** {full_name or 'Unknown'}\n"
+            f"**Status:** {status_text.get(current_status, 'Unknown')}\n\n"
+            f"**📊 Download Statistics:**\n"
+            f"• Total Downloads: {download_stats['total_downloads']}\n"
+            f"• Successful: {download_stats['successful_downloads']}\n"
+            f"• Success Rate: {download_stats['success_rate']}%\n"
+            f"• Avg Time: {download_stats['avg_download_time']}s\n"
+        )
+        
+        if download_stats['platform_breakdown']:
+            user_details += "\n**Platform Usage:**\n"
+            for platform, count in download_stats['platform_breakdown'].items():
+                user_details += f"• {platform.title()}: {count}\n"
+        
+        # Action buttons based on current status
+        action_buttons = []
+        if current_status != 1:  # Not whitelisted
+            action_buttons.append(InlineKeyboardButton("✅ Whitelist", callback_data=f"confirm_whitelist_{target_user_id}"))
+        if current_status != -1:  # Not banned
+            action_buttons.append(InlineKeyboardButton("❌ Ban", callback_data=f"confirm_ban_{target_user_id}"))
+        if current_status != 0:  # Not normal
+            action_buttons.append(InlineKeyboardButton("👤 Reset to Normal", callback_data=f"reset_user_{target_user_id}"))
+        
+        keyboard = [action_buttons] if action_buttons else []
+        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="access_menu")])
+        
+        await callback_query.edit_message_text(
+            user_details,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    elif data.startswith("reset_user_"):
+        target_user_id = int(data.split("_")[-1])
+        set_user_access_status(target_user_id, 0)
+        
+        await callback_query.answer("✅ User status reset to Normal", show_alert=True)
+        await callback_query.edit_message_text(
+            f"👤 **User Status Reset**\n\n"
+            f"User `{target_user_id}` status has been reset to Normal.\n"
+            f"They will now be subject to channel membership requirements.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="access_menu")]])
+        )
+
     elif data == "close_admin":
         await callback_query.message.delete()
 
@@ -294,6 +539,8 @@ async def handle_admin_message(client: Client, message: Message):
         await handle_add_channel_message(client, message, session)
     elif action in ["whitelist_user", "ban_user", "check_user"]:
         await handle_user_management_message(client, message, session)
+    elif action == "user_search":
+        await handle_user_search_message(client, message, session)
 
 
 def admin_session_filter(_, __, message):
@@ -425,17 +672,37 @@ async def handle_user_management_message(client: Client, message: Message, sessi
         target_user_id = None
         target_username = None
         target_mention = None
+        target_full_name = None
         
         # Check if forwarded message
         if message.forward_from:
             target_user_id = message.forward_from.id
             target_username = message.forward_from.username
-            target_mention = message.forward_from.mention
+            target_full_name = f"{message.forward_from.first_name or ''} {message.forward_from.last_name or ''}".strip()
+            
+            # Create mention with username if available, otherwise use name and ID
+            if target_username:
+                target_mention = f"@{target_username}"
+            else:
+                target_mention = f"<a href='tg://user?id={target_user_id}'>{target_full_name or 'User'}</a>"
         
         # Check if user ID in text
         elif message.text and message.text.strip().isdigit():
             target_user_id = int(message.text.strip())
-            target_mention = f"<a href='tg://user?id={target_user_id}'>User {target_user_id}</a>"
+            
+            # Try to get user info from Telegram
+            try:
+                user_info = await client.get_users(target_user_id)
+                target_username = user_info.username
+                target_full_name = f"{user_info.first_name or ''} {user_info.last_name or ''}".strip()
+                
+                if target_username:
+                    target_mention = f"@{target_username}"
+                else:
+                    target_mention = f"<a href='tg://user?id={target_user_id}'>{target_full_name or 'User'}</a>"
+            except:
+                # If we can't get user info, use basic mention
+                target_mention = f"<a href='tg://user?id={target_user_id}'>User {target_user_id}</a>"
         
         else:
             await message.reply("❌ Please forward a message from the user or send their user ID.")
@@ -445,42 +712,143 @@ async def handle_user_management_message(client: Client, message: Message, sessi
             await message.reply("❌ Could not determine user ID.")
             return
         
+        # Get current user status from database
+        current_status = get_user_access_status(target_user_id)
+        user_info = get_user_info(target_user_id)
+        
         # Perform action
         if action == "check_user":
-            current_status = get_user_access_status(target_user_id)
             status_text = {
                 -1: "❌ **Banned**",
                 0: "👤 **Normal** (subject to channel membership)",
                 1: "✅ **Whitelisted** (always has access)"
             }
             
-            await message.reply(
-                f"🔍 **User Access Status**\n\n"
+            # Get user's download stats
+            download_stats = get_user_download_stats(target_user_id)
+            
+            user_details = (
+                f"🔍 **User Information**\n\n"
                 f"**User:** {target_mention}\n"
                 f"**ID:** `{target_user_id}`\n"
-                f"**Status:** {status_text.get(current_status, 'Unknown')}\n",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="manual_access")]])
+                f"**Username:** {f'@{target_username}' if target_username else 'None'}\n"
+                f"**Full Name:** {target_full_name or 'Unknown'}\n"
+                f"**Status:** {status_text.get(current_status, 'Unknown')}\n\n"
+                f"**📊 Download Statistics:**\n"
+                f"• Total Downloads: {download_stats['total_downloads']}\n"
+                f"• Successful: {download_stats['successful_downloads']}\n"
+                f"• Success Rate: {download_stats['success_rate']}%\n"
+                f"• Avg Time: {download_stats['avg_download_time']}s\n"
+            )
+            
+            if download_stats['platform_breakdown']:
+                user_details += "\n**Platform Usage:**\n"
+                for platform, count in download_stats['platform_breakdown'].items():
+                    user_details += f"• {platform.title()}: {count}\n"
+            
+            await message.reply(
+                user_details,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✅ Whitelist", callback_data=f"confirm_whitelist_{target_user_id}")],
+                    [InlineKeyboardButton("❌ Ban", callback_data=f"confirm_ban_{target_user_id}")],
+                    [InlineKeyboardButton("🔙 Back", callback_data="manual_access")]
+                ])
             )
         
-        elif action == "whitelist_user":
-            set_user_access_status(target_user_id, 1)
-            await message.reply(
-                f"✅ **User Whitelisted**\n\n"
+        elif action in ["whitelist_user", "ban_user"]:
+            # Store user info for confirmation
+            admin_sessions[user_id] = {
+                "action": f"confirm_{action}",
+                "target_user_id": target_user_id,
+                "target_mention": target_mention,
+                "target_username": target_username,
+                "target_full_name": target_full_name,
+                "current_status": current_status
+            }
+            
+            # Create confirmation message
+            action_text = "whitelist" if action == "whitelist_user" else "ban"
+            action_emoji = "✅" if action == "whitelist_user" else "❌"
+            
+            confirm_text = (
+                f"{action_emoji} **Confirm {action_text.title()}**\n\n"
                 f"**User:** {target_mention}\n"
-                f"**ID:** `{target_user_id}`\n\n"
-                f"This user now has permanent access to the bot, regardless of channel membership.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👤 Manage Users", callback_data="manual_access")]])
+                f"**ID:** `{target_user_id}`\n"
+                f"**Username:** {f'@{target_username}' if target_username else 'None'}\n"
+                f"**Full Name:** {target_full_name or 'Unknown'}\n"
+                f"**Current Status:** {['Normal', 'Whitelisted', '', 'Banned'][current_status + 1]}\n\n"
+                f"Are you sure you want to **{action_text}** this user?"
+            )
+            
+            if action == "whitelist_user":
+                confirm_text += "\n\n**Note:** User will have permanent access regardless of channel membership."
+            else:
+                confirm_text += "\n\n**Warning:** User will be denied access even if they join required channels."
+            
+            await message.reply(
+                confirm_text,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(f"{action_emoji} Confirm {action_text.title()}", callback_data=f"execute_{action}_{target_user_id}")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="manual_access")]
+                ])
             )
         
-        elif action == "ban_user":
-            set_user_access_status(target_user_id, -1)
-            await message.reply(
-                f"❌ **User Banned**\n\n"
-                f"**User:** {target_mention}\n"
-                f"**ID:** `{target_user_id}`\n\n"
-                f"This user is now denied access to the bot.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👤 Manage Users", callback_data="manual_access")]])
-            )
+        # Clear session for check_user, keep for confirmation actions
+        if action == "check_user" and user_id in admin_sessions:
+            del admin_sessions[user_id]
+    
+    except Exception as e:
+        await message.reply(f"❌ An error occurred: {str(e)}")
+        logger.error(f"Error in user management: {e}")
+
+
+async def handle_user_search_message(client: Client, message: Message, session: dict):
+    """Handle user search input"""
+    user_id = message.from_user.id
+    
+    try:
+        search_term = message.text.strip()
+        
+        if search_term.isdigit():
+            # Search for specific user ID
+            target_user_id = int(search_term)
+            users = search_users(search_term=search_term, limit=1)
+            
+            if users:
+                user = users[0]
+                try:
+                    # Get user info from Telegram
+                    user_info = await client.get_users(target_user_id)
+                    username = user_info.username
+                    full_name = f"{user_info.first_name or ''} {user_info.last_name or ''}".strip()
+                    
+                    mention = f"@{username}" if username else f"<a href='tg://user?id={target_user_id}'>{full_name or 'User'}</a>"
+                except:
+                    mention = f"<a href='tg://user?id={target_user_id}'>User {target_user_id}</a>"
+                
+                result_text = (
+                    f"🔍 **User Found**\n\n"
+                    f"**User:** {mention}\n"
+                    f"**ID:** `{target_user_id}`\n"
+                    f"**Status:** {user['access_status_text']}\n"
+                    f"**Downloads:** {user['download_count']}\n"
+                )
+                
+                await message.reply(
+                    result_text,
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("👤 User Details", callback_data=f"user_details_{target_user_id}")],
+                        [InlineKeyboardButton("🔍 New Search", callback_data="user_search")],
+                        [InlineKeyboardButton("🔙 Back", callback_data="access_menu")]
+                    ])
+                )
+            else:
+                await message.reply(
+                    f"❌ **User Not Found**\n\nNo user found with ID: `{search_term}`",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔍 Try Again", callback_data="user_search")]])
+                )
+        else:
+            await message.reply("❌ Please send a valid user ID (numbers only).")
         
         # Clear session
         if user_id in admin_sessions:
@@ -488,7 +856,7 @@ async def handle_user_management_message(client: Client, message: Message, sessi
     
     except Exception as e:
         await message.reply(f"❌ An error occurred: {str(e)}")
-        logger.error(f"Error in user management: {e}")
+        logger.error(f"Error in user search: {e}")
 
 
 def get_channel_url(channel: Dict) -> str:
@@ -527,5 +895,5 @@ def get_channel_url(channel: Dict) -> str:
 def register_admin_handlers(app):
     """Register all admin handlers"""
     app.on_message(filters.command("admin") & filters.private)(admin_command)
-    app.on_callback_query(filters.regex(r"^(access_menu|manage_channels|manual_access|add_channel|remove_channel_|remove_all_channels|confirm_|whitelist_user|ban_user|check_user|access_stats|close_admin).*"))(admin_callback_handler)
+    app.on_callback_query(filters.regex(r"^(access_menu|manage_channels|manual_access|add_channel|remove_channel_|remove_all_channels|confirm_|whitelist_user|ban_user|check_user|access_stats|top_users|user_search|search_|execute_|user_details_|reset_user_|close_admin).*"))(admin_callback_handler)
     app.on_message(filters.private & admin_session)(handle_admin_message)

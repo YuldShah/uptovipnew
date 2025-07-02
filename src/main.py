@@ -58,6 +58,7 @@ from keyboards.main import (
 from utils import extract_url_and_name, sizeof_fmt, timeof_fmt
 from utils.access_control import check_full_user_access, get_access_denied_message, is_admin
 from utils.decorators import private_use, private_use_callback
+from utils.middleware import create_access_middleware, admin_only, get_comprehensive_denial_message
 from utils.stats_logger import start_stats_logging, stop_stats_logging
 from utils.error_handling import setup_comprehensive_logging, error_handler, download_error_handler
 
@@ -112,6 +113,39 @@ def private_use_callback(func):
         return await func(client, callback_query)
 
     return wrapper
+
+
+@app.on_callback_query(filters.regex(r"^check_access$"))
+async def check_access_callback(client: Client, callback_query: types.CallbackQuery):
+    """Handle access check button from denial message"""
+    user_id = callback_query.from_user.id
+    
+    try:
+        # Re-check user access
+        access_result = await check_full_user_access(client, user_id)
+        
+        if access_result['has_access']:
+            # User now has access
+            await callback_query.answer("✅ Access granted! You can now use the bot.", show_alert=True)
+            
+            # Show main menu
+            admin_status = await is_admin(client, user_id)
+            keyboard = create_admin_keyboard() if admin_status else create_main_keyboard()
+            
+            await callback_query.edit_message_text(
+                "✅ **Access Granted**\n\n"
+                "Welcome! You now have access to the bot. Send me a URL to get started.",
+                reply_markup=keyboard
+            )
+        else:
+            # Still no access
+            denial_message, keyboard = get_comprehensive_denial_message(access_result)
+            await callback_query.edit_message_text(denial_message, reply_markup=keyboard)
+            await callback_query.answer("❌ Access still denied. Please check channel membership.", show_alert=True)
+    
+    except Exception as e:
+        logging.error(f"Error in access check callback for user {user_id}: {e}")
+        await callback_query.answer("❌ Error checking access. Please try again.", show_alert=True)
 
 
 @app.on_message(filters.command(["start"]))

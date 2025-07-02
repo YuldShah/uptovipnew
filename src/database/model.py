@@ -62,6 +62,19 @@ class Channel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class DownloadStats(Base):
+    __tablename__ = "download_stats"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False)
+    platform = Column(String, nullable=False)  # youtube, instagram, pixeldrain, etc.
+    url = Column(String, nullable=False)
+    success = Column(Boolean, nullable=False)
+    file_size = Column(BigInteger, nullable=True)  # in bytes
+    download_time = Column(Float, nullable=True)  # in seconds
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 def create_session():
     engine = create_engine(
         os.getenv("DB_DSN"),
@@ -276,12 +289,100 @@ def check_user_access(uid: int, admins: List[int] = None) -> dict:
     if admins and uid in admins:
         return {'has_access': True, 'reason': 'admin', 'user_status': user_status}
     
-    # Check if user is whitelisted
+    # Check if user is whitelisted (manual access)
     if user_status == 1:
         return {'has_access': True, 'reason': 'whitelisted', 'user_status': user_status}
     
     # For normal users (status 0), they need channel membership
     return {'has_access': False, 'reason': 'needs_channel_check', 'user_status': user_status}
+
+
+async def check_channel_membership(client, uid: int) -> dict:
+    """
+    Check if user is member of ANY required channel (not ALL)
+    Returns: {
+        'is_member': bool,
+        'channels_checked': int,
+        'member_of': List[str],  # channel names user is member of
+        'required_channels': List[dict]
+    }
+    """
+    try:
+        required_channels = get_required_channels()
+        if not required_channels:
+            # No required channels = everyone has access
+            return {
+                'is_member': True,
+                'channels_checked': 0,
+                'member_of': [],
+                'required_channels': []
+            }
+        
+        member_of = []
+        
+        for channel in required_channels:
+            try:
+                # Try to get user's membership status
+                member = await client.get_chat_member(channel['channel_id'], uid)
+                if member.status in ['creator', 'administrator', 'member']:
+                    member_of.append(channel['channel_name'] or str(channel['channel_id']))
+                    # User is member of at least one channel - grant access
+                    return {
+                        'is_member': True,
+                        'channels_checked': len(required_channels),
+                        'member_of': member_of,
+                        'required_channels': required_channels
+                    }
+            except Exception as e:
+                # User is not a member or channel is inaccessible
+                logging.debug(f"User {uid} not member of channel {channel['channel_id']}: {e}")
+                continue
+        
+        # User is not member of any required channel
+        return {
+            'is_member': False,
+            'channels_checked': len(required_channels),
+            'member_of': member_of,
+            'required_channels': required_channels
+        }
+        
+    except Exception as e:
+        logging.error(f"Error checking channel membership for user {uid}: {e}")
+        return {
+            'is_member': False,
+            'channels_checked': 0,
+            'member_of': [],
+            'required_channels': []
+        }
+
+
+async def check_full_user_access(client, uid: int, admins: List[int] = None) -> dict:
+    """
+    Complete access check including channel membership
+    """
+    # First check user status and admin
+    basic_check = check_user_access(uid, admins)
+    
+    if basic_check['reason'] in ['admin', 'whitelisted', 'banned']:
+        return basic_check
+    
+    # Need to check channel membership
+    channel_check = await check_channel_membership(client, uid)
+    
+    if channel_check['is_member']:
+        return {
+            'has_access': True,
+            'reason': 'channel_member',
+            'user_status': basic_check['user_status'],
+            'channel_info': channel_check
+        }
+    else:
+        return {
+            'has_access': False,
+            'reason': 'no_channel_membership',
+            'user_status': basic_check['user_status'],
+            'channel_info': channel_check
+        }
 
 
 def get_user_info(uid: int) -> dict:
@@ -364,14 +465,202 @@ def log_user_activity(uid: int, activity: str, details: dict = None) -> bool:
     return True
 
 
-def log_download_attempt(uid: int, url: str, format_requested: str = None) -> bool:
-    """Log download attempt"""
+def log_download_attempt(uid: int, url: str, format_requested: str = None) -> int:
+    """Log download attempt and return ID for tracking"""
     logging.info(f"User {uid} download attempt: {url} (format: {format_requested})")
+    # For now, return a simple ID - we'll enhance this later
     return True
 
 
-def log_download_completion(uid: int, url: str, success: bool, file_size: int = None) -> bool:
-    """Log download completion"""
-    status = "success" if success else "failed"
-    logging.info(f"User {uid} download {status}: {url} (size: {file_size})")
-    return True
+def log_download_completion(uid: int, url: str, success: bool, file_size: int = None, platform: str = None, download_time: float = None) -> bool:
+    """Log download completion with statistics"""
+    try:
+        with session_manager() as session:
+            stats = DownloadStats(
+                user_id=uid,
+                platform=platform or 'unknown',
+                url=url,
+                success=success,
+                file_size=file_size,
+                download_time=download_time
+            )
+            session.add(stats)
+            
+        status = "success" if success else "failed"
+        logging.info(f"User {uid} download {status}: {url} (size: {file_size}, time: {download_time}s)")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to log download completion: {e}")
+        return False
+
+
+def get_download_statistics() -> dict:
+    """Get comprehensive download statistics"""
+    try:
+        with session_manager() as session:
+            from sqlalchemy import func, distinct
+            
+            # Total stats
+            total_downloads = session.query(DownloadStats).count()
+            successful_downloads = session.query(DownloadStats).filter(DownloadStats.success == True).count()
+            
+            # Platform stats - fixed SQL query
+            platform_stats = session.query(
+                DownloadStats.platform,
+                func.count(DownloadStats.id).label('count'),
+                func.avg(DownloadStats.download_time).label('avg_time'),
+                func.sum(DownloadStats.file_size).label('total_size')
+            ).group_by(DownloadStats.platform).all()
+            
+            # User stats
+            total_users = session.query(User).count()
+            active_users = session.query(distinct(DownloadStats.user_id)).count()
+            whitelisted_users = session.query(User).filter(User.access_status == 1).count()
+            banned_users = session.query(User).filter(User.access_status == -1).count()
+            
+            # Recent stats (last 24 hours)
+            from datetime import datetime, timedelta
+            yesterday = datetime.utcnow() - timedelta(days=1)
+            recent_downloads = session.query(DownloadStats).filter(DownloadStats.created_at >= yesterday).count()
+            recent_users = session.query(distinct(DownloadStats.user_id)).filter(DownloadStats.created_at >= yesterday).count()
+            
+            return {
+                'total_downloads': total_downloads,
+                'successful_downloads': successful_downloads,
+                'failed_downloads': total_downloads - successful_downloads,
+                'success_rate': round((successful_downloads / total_downloads * 100), 2) if total_downloads > 0 else 0,
+                'total_users': total_users,
+                'active_users': active_users,
+                'whitelisted_users': whitelisted_users,
+                'banned_users': banned_users,
+                'normal_users': total_users - whitelisted_users - banned_users,
+                'recent_downloads_24h': recent_downloads,
+                'recent_users_24h': recent_users,
+                'platform_stats': {
+                    stat.platform: {
+                        'count': stat.count,
+                        'avg_time': round(stat.avg_time or 0, 2),
+                        'total_size': stat.total_size or 0,
+                        'avg_size': round((stat.total_size or 0) / stat.count / 1024 / 1024, 2) if stat.count > 0 else 0  # MB
+                    } for stat in platform_stats
+                }
+            }
+    except Exception as e:
+        logging.error(f"Failed to get download statistics: {e}")
+        return {
+            'total_downloads': 0,
+            'successful_downloads': 0,
+            'failed_downloads': 0,
+            'success_rate': 0,
+            'total_users': 0,
+            'active_users': 0,
+            'whitelisted_users': 0,
+            'banned_users': 0,
+            'normal_users': 0,
+            'recent_downloads_24h': 0,
+            'recent_users_24h': 0,
+            'platform_stats': {}
+        }
+
+
+def get_user_download_stats(uid: int) -> dict:
+    """Get download statistics for specific user"""
+    try:
+        with session_manager() as session:
+            from sqlalchemy import func
+            
+            user_stats = session.query(
+                func.count(DownloadStats.id).label('total'),
+                func.count(DownloadStats.id).filter(DownloadStats.success == True).label('successful'),
+                func.avg(DownloadStats.download_time).label('avg_time'),
+                func.sum(DownloadStats.file_size).label('total_size')
+            ).filter(DownloadStats.user_id == uid).first()
+            
+            platform_stats = session.query(
+                DownloadStats.platform,
+                func.count(DownloadStats.id).label('count')
+            ).filter(DownloadStats.user_id == uid).group_by(DownloadStats.platform).all()
+            
+            return {
+                'total_downloads': user_stats.total or 0,
+                'successful_downloads': user_stats.successful or 0,
+                'success_rate': round((user_stats.successful / user_stats.total * 100), 2) if user_stats.total > 0 else 0,
+                'avg_download_time': round(user_stats.avg_time or 0, 2),
+                'total_downloaded_size': user_stats.total_size or 0,
+                'platform_breakdown': {stat.platform: stat.count for stat in platform_stats}
+            }
+    except Exception as e:
+        logging.error(f"Failed to get user download statistics for {uid}: {e}")
+        return {
+            'total_downloads': 0,
+            'successful_downloads': 0,
+            'success_rate': 0,
+            'avg_download_time': 0,
+            'total_downloaded_size': 0,
+            'platform_breakdown': {}
+        }
+
+
+def get_top_users(limit: int = 10) -> list:
+    """Get top users by download count"""
+    try:
+        with session_manager() as session:
+            from sqlalchemy import func, desc
+            
+            top_users = session.query(
+                DownloadStats.user_id,
+                func.count(DownloadStats.id).label('download_count'),
+                func.count(DownloadStats.id).filter(DownloadStats.success == True).label('successful_count')
+            ).group_by(DownloadStats.user_id).order_by(desc('download_count')).limit(limit).all()
+            
+            return [
+                {
+                    'user_id': user.user_id,
+                    'download_count': user.download_count,
+                    'successful_count': user.successful_count,
+                    'success_rate': round((user.successful_count / user.download_count * 100), 2) if user.download_count > 0 else 0
+                }
+                for user in top_users
+            ]
+    except Exception as e:
+        logging.error(f"Failed to get top users: {e}")
+        return []
+
+
+def search_users(search_term: str = None, status_filter: int = None, limit: int = 50) -> list:
+    """Search users by ID or status"""
+    try:
+        with session_manager() as session:
+            query = session.query(User)
+            
+            # Filter by status if provided
+            if status_filter is not None:
+                query = query.filter(User.access_status == status_filter)
+            
+            # Filter by user ID if search term is numeric
+            if search_term and search_term.isdigit():
+                query = query.filter(User.user_id == int(search_term))
+            
+            users = query.limit(limit).all()
+            
+            result = []
+            for user in users:
+                # Get download count for each user
+                download_count = session.query(DownloadStats).filter(DownloadStats.user_id == user.user_id).count()
+                
+                result.append({
+                    'user_id': user.user_id,
+                    'access_status': user.access_status,
+                    'access_status_text': {
+                        -1: 'Banned',
+                        0: 'Normal',
+                        1: 'Whitelisted'
+                    }.get(user.access_status, 'Unknown'),
+                    'download_count': download_count,
+                    'has_settings': user.settings is not None
+                })
+            
+            return result
+    except Exception as e:
+        logging.error(f"Failed to search users: {e}")
+        return []

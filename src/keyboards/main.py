@@ -26,9 +26,9 @@ def create_admin_keyboard():
     """Create the admin keyboard layout."""
     keyboard = types.InlineKeyboardMarkup([
         [types.InlineKeyboardButton("📊 User Statistics", callback_data="admin_stats")],
-        [types.InlineKeyboardButton("👥 User Management", callback_data="admin_users")],
+        [types.InlineKeyboardButton("👥 Access Control", callback_data="access_menu")],
         [types.InlineKeyboardButton("⚙️ Bot Settings", callback_data="admin_settings")],
-        [types.InlineKeyboardButton("🏠 Back to Main", callback_data="main_menu")],
+        [types.InlineKeyboardButton("❌ Close", callback_data="close_admin")],
     ])
     return keyboard
 
