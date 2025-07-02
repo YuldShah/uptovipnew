@@ -124,10 +124,18 @@ async def admin_callback_handler(client: Client, callback_query: CallbackQuery):
     data = callback_query.data
     user_id = callback_query.from_user.id
     
-    # Clear any existing admin session when navigating to main menus
-    if data in ["access_menu", "manage_channels", "manual_access"] and user_id in admin_sessions:
+    # Clear any existing admin session only when explicitly cancelling or going to main menu
+    if data in ["access_menu", "main_menu"] and user_id in admin_sessions:
         del admin_sessions[user_id]
         logger.info(f"Cleared admin session for user {user_id} on navigation to {data}")
+    
+    # Also clear session when navigating to sub-menus from an active session (this acts as cancel)
+    if user_id in admin_sessions:
+        current_action = admin_sessions[user_id].get("action")
+        if (data == "manage_channels" and current_action == "add_channel") or \
+           (data == "manual_access" and current_action in ["whitelist_user", "ban_user", "check_user"]):
+            del admin_sessions[user_id]
+            logger.info(f"Cancelled admin action {current_action} for user {user_id} - returning to {data}")
     
     if data == "access_menu":
         await callback_query.edit_message_text(
@@ -549,16 +557,22 @@ async def handle_admin_message(client: Client, message: Message):
     """Handle admin session messages"""
     user_id = message.from_user.id
     
+    logging.info(f"[ADMIN_HANDLER] Processing message from user {user_id}: {message.text}")
+    
     # Check if user is admin
     if user_id not in get_admin_list():
+        logging.info(f"[ADMIN_HANDLER] User {user_id} is not admin, skipping")
         return
     
     # Check if user has active session
     if user_id not in admin_sessions:
+        logging.info(f"[ADMIN_HANDLER] User {user_id} has no active session, skipping")
         return
     
     session = admin_sessions[user_id]
     action = session.get("action")
+    
+    logging.info(f"[ADMIN_HANDLER] Processing action {action} for user {user_id}")
     
     if action == "add_channel":
         await handle_add_channel_message(client, message, session)
@@ -571,21 +585,28 @@ async def handle_admin_message(client: Client, message: Message):
 def admin_session_filter(_, __, message):
     """Custom filter for admin messages with active sessions"""
     if not message.from_user:
+        logging.debug("[ADMIN_FILTER] No from_user, skipping")
         return False
     
     user_id = message.from_user.id
     
     # Check if user is admin
     if user_id not in get_admin_list():
+        logging.debug(f"[ADMIN_FILTER] User {user_id} is not admin, skipping")
         return False
     
     # Check if user has active session
     if user_id not in admin_sessions:
+        logging.debug(f"[ADMIN_FILTER] User {user_id} has no active session, skipping")
         return False
     
     # Don't process commands
     if message.text and message.text.startswith('/'):
+        logging.debug(f"[ADMIN_FILTER] User {user_id} sent command, skipping")
         return False
+    
+    # Log that filter matched
+    logging.info(f"[ADMIN_FILTER] Filter matched for user {user_id} with session: {admin_sessions.get(user_id)}")
     
     return True
 
@@ -919,6 +940,9 @@ def get_channel_url(channel: Dict) -> str:
 # Register handlers
 def register_admin_handlers(app):
     """Register all admin handlers"""
+    # Register admin message handler FIRST with highest priority (group 0)
+    app.on_message(filters.private & admin_session, group=0)(handle_admin_message)
+    
+    # Register other admin handlers
     app.on_message(filters.command("admin") & filters.private)(admin_command)
     app.on_callback_query(filters.regex(r"^(access_menu|manage_channels|manual_access|add_channel|remove_channel_|remove_all_channels|confirm_|whitelist_user|ban_user|check_user|access_stats|top_users|user_search|search_|execute_|user_details_|reset_user_|close_admin|main_menu).*"))(admin_callback_handler)
-    app.on_message(filters.private & admin_session)(handle_admin_message)
