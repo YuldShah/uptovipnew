@@ -160,7 +160,7 @@ async def check_full_user_access(client: Client, user_id: int) -> dict:
     }
 
 
-def is_admin(user_id: int) -> bool:
+async def is_admin(client: Client, user_id: int) -> bool:
     """Check if user is an admin"""
     admins = get_admin_list()
     return user_id in admins
