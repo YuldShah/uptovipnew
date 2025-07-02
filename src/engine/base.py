@@ -326,15 +326,15 @@ class BaseDownloader(ABC):
         return key
 
     @final
-    def start(self):
+    async def start(self):
         # Access control will be handled at the handler level
         if cache := self._get_video_cache():
             logging.info("Cache hit for %s", self._url)
             meta, file_id = json.loads(cache["meta"]), json.loads(cache["file_id"])
             meta["cache"] = True
-            self._upload(file_id, meta)
+            await self._upload(file_id, meta)
         else:
-            self._start()
+            await self._start()
         self._record_usage()
 
     @abstractmethod

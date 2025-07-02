@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from engine.direct import DirectDownload
 
 
-def krakenfiles_download(client, bot_message, url: str):
+async def krakenfiles_download(client, bot_message, url: str):
     session = requests.Session()
 
     def _extract_form_data(url: str) -> list[tuple[str, str]]:
@@ -42,28 +42,30 @@ def krakenfiles_download(client, bot_message, url: str):
                     return json_data["url"]
 
             except requests.RequestException as e:
-                bot_message.edit_text(f"Error during form submission: {str(e)}")
+                # Log error instead of editing message in helper function
+                raise ValueError(f"Error during form submission: {str(e)}")
             except ValueError as e:
-                bot_message.edit_text(f"Error parsing response: {str(e)}")
+                # Log error instead of editing message in helper function  
+                raise ValueError(f"Error parsing response: {str(e)}")
 
         raise ValueError("Could not obtain download URL")
 
-    def _download(url: str):
+    async def _download(url: str):
         try:
-            bot_message.edit_text("Processing krakenfiles download link...")
+            await bot_message.edit_text("Processing krakenfiles download link...")
             form_data = _extract_form_data(url)
             download_url = _get_download_url(form_data)
 
-            bot_message.edit_text("Starting download...")
+            await bot_message.edit_text("Starting download...")
             downloader = DirectDownload(client, bot_message, download_url)
-            downloader.start()
+            await downloader.start()
 
         except ValueError as e:
-            bot_message.edit_text(f"Download failed!❌\n{str(e)}")
+            await bot_message.edit_text(f"Download failed!❌\n{str(e)}")
         except Exception as e:
-            bot_message.edit_text(
+            await bot_message.edit_text(
                 f"Download failed!❌\nAn error occurred: {str(e)}\n"
                 "Please check your URL and try again."
             )
 
-    _download(url)
+    await _download(url)

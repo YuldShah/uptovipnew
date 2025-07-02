@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from engine.direct import DirectDownload
 
 
-def pixeldrain_download(client, bot_message, url):
+async def pixeldrain_download(client, bot_message, url):
     FILE_URL_FORMAT = "https://pixeldrain.com/api/file/{}?download"
     USER_PAGE_PATTERN = re.compile(r"https://pixeldrain.com/u/(\w+)")
 
@@ -25,20 +25,20 @@ def pixeldrain_download(client, bot_message, url):
     def _get_download_url(file_id):
         return FILE_URL_FORMAT.format(file_id)
 
-    def _download(url):
+    async def _download(url):
         try:
             file_id = _extract_file_id(url)
             download_url = _get_download_url(file_id)
 
             ddl = DirectDownload(client, bot_message, download_url)
-            ddl.start()
+            await ddl.start()
 
         except ValueError as e:
-            bot_message.edit_text(f"Download failed!❌\n\n`{e}`")
+            await bot_message.edit_text(f"Download failed!❌\n\n`{e}`")
         except Exception as e:
-            bot_message.edit_text(
+            await bot_message.edit_text(
                 f"Download failed!❌\nAn error occurred: {str(e)}\n"
                 "Please check your URL and try again."
             )
 
-    _download(url)
+    await _download(url)

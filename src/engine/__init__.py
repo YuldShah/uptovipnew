@@ -13,21 +13,21 @@ from engine.instagram import InstagramDownload
 from engine.krakenfiles import krakenfiles_download
 
 
-def youtube_entrance(client, bot_message, url):
+async def youtube_entrance(client, bot_message, url):
     youtube = YoutubeDownload(client, bot_message, url)
-    youtube.start()
+    await youtube.start()
 
 
-def direct_entrance(client, bot_message, url):
+async def direct_entrance(client, bot_message, url):
     dl = DirectDownload(client, bot_message, url)
-    dl.start()
+    await dl.start()
 
 
 # --- Handler for the Instagram class, to make the interface consistent ---
-def instagram_handler(client: Any, bot_message: Any, url: str) -> None:
+async def instagram_handler(client: Any, bot_message: Any, url: str) -> None:
     """A wrapper to handle the InstagramDownload class."""
     downloader = InstagramDownload(client, bot_message, url)
-    downloader.start()
+    await downloader.start()
 
 DOWNLOADER_MAP: dict[str, Callable[[Any, Any, str], Any]] = {
     "pixeldrain.com": pixeldrain_download,
@@ -35,7 +35,7 @@ DOWNLOADER_MAP: dict[str, Callable[[Any, Any, str], Any]] = {
     "instagram.com": instagram_handler,
 }
 
-def special_download_entrance(client: Any, bot_message: Any, url: str) -> Any:
+async def special_download_entrance(client: Any, bot_message: Any, url: str) -> Any:
     try:
         hostname = urlparse(url).hostname
         if not hostname:
@@ -50,6 +50,6 @@ def special_download_entrance(client: Any, bot_message: Any, url: str) -> Any:
     # Iterate through the map to find a matching handler.
     for domain_suffix, handler_function in DOWNLOADER_MAP.items():
         if hostname.endswith(domain_suffix):
-            return handler_function(client, bot_message, url)
+            return await handler_function(client, bot_message, url)
 
     raise ValueError(f"Invalid URL: No specific downloader found for {hostname}")

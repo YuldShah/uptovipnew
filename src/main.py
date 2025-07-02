@@ -57,6 +57,7 @@ from keyboards.main import (
 )
 from utils import extract_url_and_name, sizeof_fmt, timeof_fmt
 from utils.access_control import check_full_user_access, get_access_denied_message, is_admin
+from utils.decorators import private_use, private_use_callback
 from utils.stats_logger import start_stats_logging, stop_stats_logging
 from utils.error_handling import setup_comprehensive_logging, error_handler, download_error_handler
 
@@ -78,13 +79,16 @@ def create_app(name: str, workers: int = 64) -> Client:
 app = create_app("main")
 
 
-def private_use(func):
-    async def wrapper(client: Client, message: types.Message):
-        chat_id = getattr(message.from_user, "id", None)
+
+def private_use_callback(func):
+    """Decorator for callback query handlers with access control"""
+    async def wrapper(client: Client, callback_query: types.CallbackQuery):
+        chat_id = getattr(callback_query.from_user, "id", None)
 
         # Only allow private chats for this bot now
-        if message.chat.type != enums.ChatType.PRIVATE:
-            logging.debug("Ignoring group/channel message: %s", message.text)
+        if callback_query.message.chat.type != enums.ChatType.PRIVATE:
+            logging.debug("Ignoring group/channel callback: %s", callback_query.data)
+            await callback_query.answer("❌ This bot only works in private chats.")
             return
 
         # Access control check
@@ -93,19 +97,19 @@ def private_use(func):
                 access_result = await check_full_user_access(client, chat_id)
                 if not access_result['has_access']:
                     denial_message = get_access_denied_message(access_result)
-                    await message.reply_text(denial_message, quote=True)
+                    await callback_query.answer("❌ Access denied", show_alert=True)
                     logging.info(f"Access denied for user {chat_id}: {access_result['reason']}")
                     return
                 
                 # Log successful access
-                logging.info(f"Access granted for user {chat_id}: {access_result['reason']}")
+                logging.debug(f"Callback access granted for user {chat_id}: {access_result['reason']}")
                 
             except Exception as e:
                 logging.error(f"Error checking access for user {chat_id}: {e}")
-                await message.reply_text("❌ **Access Check Failed**\n\nThere was an error verifying your access. Please try again later.", quote=True)
+                await callback_query.answer("❌ Access check failed", show_alert=True)
                 return
 
-        return await func(client, message)
+        return await func(client, callback_query)
 
     return wrapper
 
@@ -326,7 +330,7 @@ async def download_handler(client: Client, message: types.Message):
             logging.info("Direct download using aria2/requests start %s", url)
             bot_msg = await message.reply_text("📥 Direct download request received.", quote=True)
             try:
-                direct_entrance(client, bot_msg, url)
+                await direct_entrance(client, bot_msg, url)
             except ValueError as e:
                 await message.reply_text(e.__str__(), quote=True)
                 await bot_msg.delete()
@@ -337,7 +341,7 @@ async def download_handler(client: Client, message: types.Message):
             logging.info("Special download start %s", url)
             bot_msg = await message.reply_text("🔗 Special download request received.", quote=True)
             try:
-                special_download_entrance(client, bot_msg, url)
+                await special_download_entrance(client, bot_msg, url)
             except ValueError as e:
                 await message.reply_text(e.__str__(), quote=True)
                 await bot_msg.delete()
@@ -391,7 +395,7 @@ async def download_handler(client: Client, message: types.Message):
         # Regular download for non-YouTube URLs or YouTube fallback
         bot_msg: types.Message | Any = await message.reply_text("Task received.", quote=True)
         await client.send_chat_action(chat_id, enums.ChatAction.UPLOAD_VIDEO)
-        youtube_entrance(client, bot_msg, url)
+        await youtube_entrance(client, bot_msg, url)
         
     except pyrogram.errors.Flood as e:
         await clear_user_state(chat_id)  # Clear state on flood
@@ -669,7 +673,8 @@ async def youtube_format_callback_handler(client: Client, callback_query: types.
         bot_msg = await callback_query.message.reply_text("⏳ Preparing download...", quote=False)
         
         # Use the youtube_entrance with specific format
-        youtube_entrance(client, bot_msg, session['url'], specific_format=format_id)
+        # TODO: Implement specific format support
+        await youtube_entrance(client, bot_msg, session['url'])
         
         # Clean up the session
         delete_youtube_format_session(chat_id)
