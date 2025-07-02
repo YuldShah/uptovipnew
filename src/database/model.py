@@ -283,3 +283,67 @@ def get_user_info(uid: int) -> dict:
                 'config': user.config
             }
         return None
+
+
+def get_user_platform_quality(uid: int, platform: str = 'youtube') -> str:
+    """Get user's quality preference for specific platform"""
+    quality = get_quality_settings(uid)
+    return quality
+
+
+def set_user_platform_quality(uid: int, quality: str, platform: str = 'youtube') -> bool:
+    """Set user's quality preference for specific platform"""
+    return set_user_settings(uid, quality=quality)
+
+
+def create_youtube_format_session(uid: int, formats: dict) -> bool:
+    """Create a YouTube format selection session for user"""
+    with session_manager() as session:
+        user = session.query(User).filter(User.user_id == uid).first()
+        if not user:
+            user = User(user_id=uid, config={})
+            session.add(user)
+        
+        if not user.config:
+            user.config = {}
+        
+        user.config['youtube_formats'] = formats
+        return True
+
+
+def get_youtube_format_session(uid: int) -> dict:
+    """Get YouTube format selection session for user"""
+    with session_manager() as session:
+        user = session.query(User).filter(User.user_id == uid).first()
+        if user and user.config and 'youtube_formats' in user.config:
+            return user.config['youtube_formats']
+        return {}
+
+
+def delete_youtube_format_session(uid: int) -> bool:
+    """Delete YouTube format selection session for user"""
+    with session_manager() as session:
+        user = session.query(User).filter(User.user_id == uid).first()
+        if user and user.config and 'youtube_formats' in user.config:
+            del user.config['youtube_formats']
+            return True
+        return False
+
+
+def log_user_activity(uid: int, activity: str, details: dict = None) -> bool:
+    """Log user activity (simplified implementation)"""
+    logging.info(f"User {uid} activity: {activity} - {details}")
+    return True
+
+
+def log_download_attempt(uid: int, url: str, format_requested: str = None) -> bool:
+    """Log download attempt"""
+    logging.info(f"User {uid} download attempt: {url} (format: {format_requested})")
+    return True
+
+
+def log_download_completion(uid: int, url: str, success: bool, file_size: int = None) -> bool:
+    """Log download completion"""
+    status = "success" if success else "failed"
+    logging.info(f"User {uid} download {status}: {url} (size: {file_size})")
+    return True
