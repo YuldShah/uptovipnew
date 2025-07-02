@@ -576,30 +576,57 @@ def log_user_activity(uid: int, activity: str, details: dict = None) -> bool:
 
 def log_download_attempt(uid: int, url: str, format_requested: str = None) -> int:
     """Log download attempt and return ID for tracking"""
-    logging.info(f"User {uid} download attempt: {url} (format: {format_requested})")
-    # For now, return a simple ID - we'll enhance this later
-    return True
-
-
-def log_download_completion(uid: int, url: str, success: bool, file_size: int = None, platform: str = None, download_time: float = None) -> bool:
-    """Log download completion with statistics"""
     try:
         with session_manager() as session:
+            # Create the stats entry with initial data
             stats = DownloadStats(
                 user_id=uid,
-                platform=platform or 'unknown',
+                platform=format_requested or 'unknown',
                 url=url,
-                success=success,
-                file_size=file_size,
-                download_time=download_time
+                success=False,  # Will be updated on completion
+                file_size=None,
+                download_time=None
             )
             session.add(stats)
+            session.flush()  # Get the ID without committing
+            download_id = stats.id
+            session.commit()
+            
+        logging.info(f"User {uid} download attempt logged with ID {download_id}: {url} (format: {format_requested})")
+        return download_id
+    except Exception as e:
+        logging.error(f"Failed to log download attempt: {e}")
+        # Return a dummy ID so the process can continue
+        return -1
+
+
+def log_download_completion(download_id: int, success: bool, file_size: int = None, error_message: str = None, download_time: float = None) -> bool:
+    """Log download completion with statistics using download_id"""
+    try:
+        with session_manager() as session:
+            # Find the existing download record
+            stats = session.query(DownloadStats).filter(DownloadStats.id == download_id).first()
+            if not stats:
+                logging.error(f"Download record with ID {download_id} not found")
+                return False
+                
+            # Update the record with completion data
+            stats.success = success
+            if file_size is not None:
+                stats.file_size = file_size
+            if download_time is not None:
+                stats.download_time = download_time
+            # Note: error_message is not stored in database but logged
+            if error_message is not None:
+                logging.error(f"Download {download_id} failed with error: {error_message}")
+                
+            session.commit()
             
         status = "success" if success else "failed"
-        logging.info(f"User {uid} download {status}: {url} (size: {file_size}, time: {download_time}s)")
+        logging.info(f"Download {download_id} completed as {status}: {stats.url} (size: {file_size}, time: {download_time}s)")
         return True
     except Exception as e:
-        logging.error(f"Failed to log download completion: {e}")
+        logging.error(f"Failed to log download completion for ID {download_id}: {e}")
         return False
 
 

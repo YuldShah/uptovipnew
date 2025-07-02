@@ -454,9 +454,31 @@ async def download_handler(client: Client, message: types.Message):
                     await bot_msg.delete()
                     return
             
-            # For other platforms, log as generic
+            # For other platforms, log as generic and determine best download method
             download_id = log_download_attempt(chat_id, url, platform)
             log_user_activity(chat_id, 'download', {'platform': platform, 'url': url, 'download_id': download_id})
+            
+            # Auto-detect if this should be a direct download based on file extension
+            direct_download_extensions = {'.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', 
+                                        '.pdf', '.doc', '.docx', '.xlsx', '.ppt', '.pptx',
+                                        '.exe', '.msi', '.deb', '.rpm', '.dmg', '.pkg',
+                                        '.iso', '.img', '.bin'}
+            
+            # Check if URL ends with a direct download extension
+            url_lower = url.lower()
+            is_direct_download = any(url_lower.endswith(ext) for ext in direct_download_extensions)
+            
+            if is_direct_download:
+                logging.info(f"Auto-detected direct download for URL: {url}")
+                bot_msg = await message.reply_text("📥 Auto-detected direct download. Processing...", quote=True)
+                try:
+                    await direct_entrance(client, bot_msg, url, download_id)
+                    return
+                except Exception as e:
+                    logging.error(f"Direct download failed: {e}")
+                    await message.reply_text(f"❌ Direct download failed: {e}", quote=True)
+                    await bot_msg.delete()
+                    return
         
         # Regular download for non-YouTube URLs or YouTube fallback
         if processing_msg:
@@ -998,6 +1020,30 @@ async def admin_commands_handler(client: Client, message: types.Message):
     elif command == "/admin_settings":
         # Show admin settings
         await message.reply_text("⚙️ **Bot Settings**\n\nThis feature is coming soon!")
+
+
+@app.on_message(filters.command(["direct"]))
+@private_use
+@error_handler
+async def direct_command_handler(client: Client, message: types.Message):
+    """Handle /direct command for direct downloads"""
+    chat_id = message.chat.id
+    init_user(chat_id)
+    
+    # Log user activity
+    log_user_activity(chat_id, 'command', {'command': 'direct'})
+    
+    await set_user_state(chat_id, "direct_download")
+    await client.send_message(
+        chat_id,
+        "📥 **Direct Download Mode**\n\nSend me a direct link to download the file directly using aria2/requests.\n\n"
+        "This bypasses YouTube-dl and downloads files directly. Good for:\n"
+        "• ZIP files\n"
+        "• Large files\n"
+        "• Direct file links\n\n"
+        "_Send any other message to cancel._",
+        reply_markup=create_back_keyboard()
+    )
 
 
 if __name__ == "__main__":
