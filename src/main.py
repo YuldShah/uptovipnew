@@ -293,7 +293,7 @@ def check_link(url: str):
         return "m3u8 links are disabled."
 
 
-@app.on_message(filters.incoming & filters.text & ~filters.regex(r"^(⚙️|📊|ℹ️|❓|🏓|📥|🔗|🔧)") & ~filters.command(), group=1)
+@app.on_message(filters.incoming & filters.text & ~filters.regex(r"^(⚙️|📊|ℹ️|❓|🏓|📥|🔗|🔧|/)"), group=1)
 @private_use
 @download_error_handler
 async def download_handler(client: Client, message: types.Message):
