@@ -516,6 +516,7 @@ async def clear_user_state(user_id):
 
 # Callback query handlers for inline keyboards
 @app.on_callback_query(filters.regex(r"^settings_"))
+@private_use_callback
 async def settings_callback_handler(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     data = callback_query.data
@@ -543,14 +544,15 @@ async def settings_callback_handler(client: Client, callback_query: types.Callba
 
 
 @app.on_callback_query(filters.regex(r"^format_"))
-def format_callback_handler(client: Client, callback_query: types.CallbackQuery):
+@private_use_callback
+async def format_callback_handler(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     data = callback_query.data.replace("format_", "")
     
     logging.info("Setting %s file format to %s", chat_id, data)
     set_user_settings(chat_id, "format", data)
     
-    callback_query.answer(f"✅ Upload format set to {data}")
+    await callback_query.answer(f"✅ Upload format set to {data}")
     
     # Go back to settings
     quality = get_quality_settings(chat_id)
@@ -565,18 +567,19 @@ def format_callback_handler(client: Client, callback_query: types.CallbackQuery)
 
 Select an option to change:"""
     
-    callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
+    await callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
 
 
 @app.on_callback_query(filters.regex(r"^youtube_quality_"))
-def youtube_quality_callback_handler(client: Client, callback_query: types.CallbackQuery):
+@private_use_callback
+async def youtube_quality_callback_handler(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     data = callback_query.data.replace("youtube_quality_", "")
     
     logging.info("Setting %s YouTube quality to %s", chat_id, data)
     set_user_settings(chat_id, "quality", data)
     
-    callback_query.answer(f"✅ YouTube quality set to {data}")
+    await callback_query.answer(f"✅ YouTube quality set to {data}")
     
     # Go back to settings
     quality = get_quality_settings(chat_id)
@@ -591,18 +594,19 @@ def youtube_quality_callback_handler(client: Client, callback_query: types.Callb
 
 Select an option to change:"""
     
-    callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
+    await callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
 
 
 @app.on_callback_query(filters.regex(r"^platform_quality_"))
-def platform_quality_callback_handler(client: Client, callback_query: types.CallbackQuery):
+@private_use_callback
+async def platform_quality_callback_handler(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     data = callback_query.data.replace("platform_quality_", "")
     
     logging.info("Setting %s platform quality to %s", chat_id, data)
     set_user_platform_quality(chat_id, data)
     
-    callback_query.answer(f"✅ Platform quality set to {data}")
+    await callback_query.answer(f"✅ Platform quality set to {data}")
     
     # Go back to settings
     quality = get_quality_settings(chat_id)
@@ -617,10 +621,11 @@ def platform_quality_callback_handler(client: Client, callback_query: types.Call
 
 Select an option to change:"""
     
-    callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
+    await callback_query.edit_message_text(settings_text, reply_markup=create_settings_keyboard())
 
 
 @app.on_callback_query(filters.regex(r"^back_to_"))
+@private_use_callback
 async def back_navigation_handler(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     data = callback_query.data
@@ -652,6 +657,7 @@ Select an option to change:"""
 
 
 @app.on_callback_query(filters.regex(r"^yt_format_"))
+@private_use_callback
 async def youtube_format_callback_handler(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     format_id = callback_query.data.replace("yt_format_", "")
@@ -688,6 +694,7 @@ async def youtube_format_callback_handler(client: Client, callback_query: types.
 
 
 @app.on_callback_query(filters.regex(r"^cancel_format_selection$"))
+@private_use_callback
 async def cancel_format_selection_handler(client: Client, callback_query: types.CallbackQuery):
     chat_id = callback_query.message.chat.id
     
@@ -702,8 +709,8 @@ async def cancel_format_selection_handler(client: Client, callback_query: types.
 
 # YouTube Format Selection Handlers
 @app.on_callback_query(filters.regex(r"^ytfmt_"))
-@private_use
-async def youtube_format_callback_handler(client: Client, callback_query: types.CallbackQuery):
+@private_use_callback
+async def youtube_format_selection_handler(client: Client, callback_query: types.CallbackQuery):
     """Handle YouTube format selection callbacks"""
     chat_id = callback_query.message.chat.id
     data = callback_query.data
@@ -766,7 +773,7 @@ async def youtube_format_callback_handler(client: Client, callback_query: types.
 
 # Main menu and navigation handlers
 @app.on_callback_query(filters.regex(r"^(main_menu|settings|help|stats)$"))
-@private_use
+@private_use_callback
 async def main_navigation_handler(client: Client, callback_query: types.CallbackQuery):
     """Handle main navigation buttons"""
     chat_id = callback_query.message.chat.id
@@ -810,35 +817,172 @@ async def main_navigation_handler(client: Client, callback_query: types.Callback
         await callback_query.answer("❌ An error occurred", show_alert=True)
 
 
-# Legacy callback handlers for compatibility (FIXED)
-@app.on_callback_query(filters.regex(r"^(document|video|audio)$"))
-def legacy_format_callback(client: Client, callback_query: types.CallbackQuery):
+# Admin callback handlers
+@app.on_callback_query(filters.regex(r"^admin_"))
+@private_use_callback
+async def admin_callback_handler(client: Client, callback_query: types.CallbackQuery):
+    """Handle admin buttons"""
     chat_id = callback_query.message.chat.id
     data = callback_query.data
     
-    # Only accept valid format enum values
-    if data in ["video", "audio", "document"]:
-        logging.info("Setting %s file type to %s", chat_id, data)
-        callback_query.answer(f"Your send type was set to {data}")
-        set_user_settings(chat_id, "format", data)
-    else:
-        logging.warning(f"Invalid format callback data: {data}")
-        callback_query.answer("Invalid format selection")
-
-
-@app.on_callback_query(filters.regex(r"^(high|medium|low|audio|custom)$"))
-def legacy_quality_callback(client: Client, callback_query: types.CallbackQuery):
-    chat_id = callback_query.message.chat.id
-    data = callback_query.data
+    # Check if user is admin
+    admin_status = await is_admin(client, callback_query.from_user.id)
+    if not admin_status:
+        await callback_query.answer("❌ Access denied. Admin only.", show_alert=True)
+        return
     
-    # Only accept valid quality enum values
-    if data in ["high", "medium", "low", "audio", "custom"]:
-        logging.info("Setting %s download quality to %s", chat_id, data)
-        callback_query.answer(f"Your default engine quality was set to {data}")
-        set_user_settings(chat_id, "quality", data)
-    else:
-        logging.warning(f"Invalid quality callback data: {data}")
-        callback_query.answer("Invalid quality selection")
+    try:
+        if data == "admin_stats":
+            # Show user statistics
+            # TODO: Implement real statistics
+            stats_text = """📊 **Bot Statistics**
+
+👤 **User Statistics:**
+• Total Users: Coming soon
+• Active Users: Coming soon
+• Downloads Today: Coming soon
+
+📈 **System Statistics:**
+• Bot Uptime: Coming soon
+• Total Downloads: Coming soon
+• Storage Used: Coming soon
+
+🔧 **Technical:**
+• Database Status: ✅ Connected
+• Redis Status: ⚠️ Fake Redis
+• Download Queue: Coming soon"""
+            
+            await callback_query.edit_message_text(
+                stats_text,
+                reply_markup=types.InlineKeyboardMarkup([
+                    [types.InlineKeyboardButton("🔄 Refresh", callback_data="admin_stats")],
+                    [types.InlineKeyboardButton("🏠 Back to Admin", callback_data="admin_menu")]
+                ])
+            )
+            
+        elif data == "admin_users":
+            # Show user management
+            users_text = """👥 **User Management**
+
+🛡️ **Access Control:**
+• Total Users: Coming soon
+• Blocked Users: Coming soon
+• Channel Subscribers: Coming soon
+
+⚙️ **Management Options:**
+• View User List
+• Block/Unblock Users
+• Channel Management
+• Access Logs
+
+_This feature is under development._"""
+            
+            await callback_query.edit_message_text(
+                users_text,
+                reply_markup=types.InlineKeyboardMarkup([
+                    [types.InlineKeyboardButton("📝 View Logs", callback_data="admin_logs")],
+                    [types.InlineKeyboardButton("🏠 Back to Admin", callback_data="admin_menu")]
+                ])
+            )
+            
+        elif data == "admin_settings":
+            # Show bot settings
+            settings_text = """⚙️ **Bot Settings**
+
+🤖 **Current Configuration:**
+• Private Mode: ✅ Enabled
+• Admin Access: ✅ Active
+• Download Modes: All Enabled
+• Error Handling: ✅ Active
+
+🔧 **System Settings:**
+• Logging Level: INFO
+• Max File Size: Unlimited
+• Concurrent Downloads: 4
+• Auto-cleanup: Enabled
+
+_Settings can be modified in the config files._"""
+            
+            await callback_query.edit_message_text(
+                settings_text,
+                reply_markup=types.InlineKeyboardMarkup([
+                    [types.InlineKeyboardButton("📋 View Config", callback_data="admin_config")],
+                    [types.InlineKeyboardButton("🏠 Back to Admin", callback_data="admin_menu")]
+                ])
+            )
+            
+        elif data == "admin_menu":
+            # Back to admin menu
+            await callback_query.edit_message_text(
+                "🔧 **Admin Panel**\n\nChoose an administrative function:",
+                reply_markup=create_admin_keyboard()
+            )
+            
+        elif data == "admin_logs":
+            # Show recent logs (placeholder)
+            await callback_query.edit_message_text(
+                "📝 **Recent Activity Logs**\n\n_This feature is under development._\n\nFor now, check the server logs directly.",
+                reply_markup=types.InlineKeyboardMarkup([
+                    [types.InlineKeyboardButton("🏠 Back to Admin", callback_data="admin_menu")]
+                ])
+            )
+            
+        elif data == "admin_config":
+            # Show config info (placeholder)
+            await callback_query.edit_message_text(
+                "📋 **Configuration**\n\n_This feature is under development._\n\nConfig files are located in the `config/` directory.",
+                reply_markup=types.InlineKeyboardMarkup([
+                    [types.InlineKeyboardButton("🏠 Back to Admin", callback_data="admin_menu")]
+                ])
+            )
+        
+        await callback_query.answer()
+        
+    except Exception as e:
+        logging.error(f"Error in admin callback handler: {e}")
+        await callback_query.answer("❌ An error occurred", show_alert=True)
+
+
+# Legacy wrapper for private use
+def private_use_legacy(func):
+    """Decorator for private use with legacy support"""
+    async def wrapper(client: Client, message: types.Message):
+        chat_id = message.chat.id
+        
+        # Only allow private chats for this bot now
+        if message.chat.type != enums.ChatType.PRIVATE:
+            logging.debug("Ignoring group/channel message: %s", message.text)
+            await message.reply_text("❌ This bot only works in private chats.")
+            return
+
+        # Access control - check if user is admin
+        is_admin_user = await is_admin(client, chat_id)
+        if not is_admin_user:
+            await message.reply_text("❌ Access denied. Admins only.")
+            logging.info(f"Access denied for non-admin user {chat_id} trying to use admin command.")
+            return
+        
+        return await func(client, message)
+
+    return wrapper
+
+
+# Admin commands - legacy handlers
+@app.on_message(filters.command(["admin_stats", "admin_users", "admin_settings"]))
+@private_use_legacy
+async def admin_commands_handler(client: Client, message: types.Message):
+    chat_id = message.chat.id
+    command = message.text
+    
+    if command == "/admin_stats":
+        # Show admin stats
+        await message.reply_text("📊 **Admin Statistics**\n\nThis feature is coming soon!")
+    elif command == "/admin_users":
+        # Show admin users management
+        await message.reply_text("👥 **User Management**\n\nThis feature is coming soon!")
+    elif command == "/admin_settings":
+        # Show admin settings
+        await message.reply_text("⚙️ **Bot Settings**\n\nThis feature is coming soon!")
 
 
 if __name__ == "__main__":
