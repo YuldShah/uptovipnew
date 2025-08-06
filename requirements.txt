@@ -6,7 +6,7 @@ psycopg2-binary>=2.9.10
 filetype>=1.2.0
 beautifulsoup4>=4.12.3
 fakeredis>=2.26.2
-redis==6.2.0
+redis==6.3.0
 requests>=2.32.3
 tqdm>=4.67.1
 token-bucket>=0.3.0
